@@ -1,0 +1,13 @@
+email,first_name,last_name,company,country,tags,industry
+ava.chen@example.com,Ava,Chen,Northwind Labs,US,saas;founders,Software
+liam.patel@example.com,Liam,Patel,Brightpath,UK,agency,Marketing
+noah.garcia@example.com,Noah,Garcia,Solace Health,ES,healthtech;founders,Healthcare
+mia.rossi@example.com,Mia,Rossi,Verde Foods,IT,ecommerce,Food & Beverage
+ethan.kim@example.com,Ethan,Kim,Stackline,US,saas,Software
+zara.ahmed@example.com,Zara,Ahmed,Orbit Studio,AE,agency;founders,Design
+lucas.muller@example.com,Lucas,Müller,Kraftwerk Digital,DE,agency,Marketing
+sofia.silva@example.com,Sofia,Silva,Mar Azul,PT,ecommerce,Retail
+omar.khan@example.com,Omar,Khan,Ledgerly,PK,fintech;saas,Finance
+emma.johnson@example.com,Emma,Johnson,Peak Fitness,CA,ecommerce,Fitness
+hiro.tanaka@example.com,Hiro,Tanaka,Kumo Cloud,JP,saas,Software
+chloe.martin@example.com,Chloe,Martin,Atelier Nord,FR,agency,Design

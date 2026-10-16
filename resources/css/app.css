@@ -1,0 +1,102 @@
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        --background: 0 0% 98%;
+        --foreground: 0 0% 9%;
+        --card: 0 0% 100%;
+        --card-foreground: 0 0% 9%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 0 0% 9%;
+        --primary: 239 84% 67%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 0 0% 94%;
+        --secondary-foreground: 0 0% 9%;
+        --muted: 0 0% 94%;
+        --muted-foreground: 0 0% 42%;
+        --accent: 0 0% 93%;
+        --accent-foreground: 0 0% 9%;
+        --destructive: 0 72% 51%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 0 0% 88%;
+        --input: 0 0% 86%;
+        --ring: 239 84% 67%;
+        --radius: 0.75rem;
+
+        /* glass */
+        --glass: 0 0% 100% / 0.65;
+        --glass-border: 0 0% 0% / 0.07;
+        --glow-a: 239 84% 67% / 0.12;
+        --glow-b: 271 91% 65% / 0.1;
+    }
+
+    .dark {
+        --background: 0 0% 4%;
+        --foreground: 0 0% 96%;
+        --card: 0 0% 7%;
+        --card-foreground: 0 0% 96%;
+        --popover: 0 0% 8%;
+        --popover-foreground: 0 0% 96%;
+        --primary: 239 84% 67%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 0 0% 13%;
+        --secondary-foreground: 0 0% 96%;
+        --muted: 0 0% 13%;
+        --muted-foreground: 0 0% 60%;
+        --accent: 0 0% 14%;
+        --accent-foreground: 0 0% 96%;
+        --destructive: 0 62% 50%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 0 0% 15%;
+        --input: 0 0% 18%;
+        --ring: 239 84% 67%;
+
+        --glass: 0 0% 100% / 0.035;
+        --glass-border: 0 0% 100% / 0.08;
+        --glow-a: 239 84% 67% / 0.16;
+        --glow-b: 271 91% 65% / 0.12;
+    }
+
+    * {
+        @apply border-border;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+        font-feature-settings: 'cv11', 'ss01';
+    }
+
+    /* Recharts focuses its SVG on click and draws an outline box; not wanted. */
+    .recharts-wrapper,
+    .recharts-wrapper *,
+    .recharts-surface {
+        outline: none !important;
+    }
+}
+
+@layer components {
+    /* Subtle radial glows behind everything */
+    .app-bg {
+        background:
+            radial-gradient(60rem 40rem at 10% -10%, hsl(var(--glow-a)), transparent 60%),
+            radial-gradient(50rem 35rem at 100% 0%, hsl(var(--glow-b)), transparent 60%),
+            hsl(var(--background));
+        background-attachment: fixed;
+    }
+
+    .glass {
+        background: hsl(var(--glass));
+        border: 1px solid hsl(var(--glass-border));
+        backdrop-filter: blur(16px) saturate(140%);
+        -webkit-backdrop-filter: blur(16px) saturate(140%);
+    }
+
+    .text-gradient {
+        @apply bg-brand bg-clip-text text-transparent;
+    }
+}
