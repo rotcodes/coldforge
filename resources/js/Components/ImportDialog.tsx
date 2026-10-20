@@ -146,7 +146,7 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
 
     return (
         <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setTimeout(reset, 200); }}>
-            <DialogContent className={cn('max-h-[90vh] overflow-y-auto', step === 'map' ? 'sm:max-w-3xl' : 'sm:max-w-lg')}>
+            <DialogContent className={cn('max-h-[90vh] overflow-y-auto overflow-x-hidden', step === 'map' ? 'sm:max-w-3xl' : 'sm:max-w-lg')}>
                 <DialogHeader>
                     <DialogTitle>Import contacts</DialogTitle>
                     <DialogDescription>
@@ -203,10 +203,10 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
                                 const customValue = isCustom ? target : `custom:${slug(h)}`;
                                 const isMapped = target && target !== 'skip';
                                 return (
-                                    <div key={h} className={cn('flex items-center gap-3 rounded-lg border p-2.5 transition-colors', isMapped ? 'border-primary/30 bg-primary/5' : 'border-border')}>
+                                    <div key={h} className={cn('flex flex-col gap-1.5 rounded-lg border p-2.5 transition-colors sm:flex-row sm:items-center sm:gap-3', isMapped ? 'border-primary/30 bg-primary/5' : 'border-border')}>
                                         <div className="min-w-0 flex-1 truncate font-mono text-xs" title={h}>{h}</div>
                                         <Select value={target ?? 'skip'} onValueChange={(v) => setMapping((m) => ({ ...m, [h]: v }))}>
-                                            <SelectTrigger className="h-8 w-44">
+                                            <SelectTrigger className="h-8 w-full sm:w-44">
                                                 <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent className="max-h-80">
@@ -232,7 +232,7 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
                             <TagInput value={importTags} onChange={setImportTags} suggestions={tags} placeholder="e.g. notion-import, batch-01" />
                         </div>
 
-                        <div className="overflow-x-auto rounded-lg border">
+                        <div className="w-full max-w-full overflow-x-auto rounded-lg border">
                             <Table>
                                 <TableHeader>
                                     <TableRow>
