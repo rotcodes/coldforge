@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Contact;
+use App\Models\Industry;
 use App\Models\Sender;
 use App\Models\Template;
 use App\Models\User;
@@ -14,6 +15,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->seedUser();
+        $this->seedIndustries();
 
         if (! Sender::exists()) {
             Sender::create([
@@ -49,6 +51,16 @@ class DatabaseSeeder extends Seeder
                     'tags' => explode(';', $tags), 'custom_fields' => ['industry' => $industry], 'source' => 'seed',
                 ]);
             }
+        }
+    }
+
+    private function seedIndustries(): void
+    {
+        foreach (config('coldforge.default_industries', []) as $i) {
+            Industry::updateOrCreate(
+                ['slug' => $i['slug']],
+                ['label' => $i['label'], 'workflows' => $i['workflows'], 'tracking' => $i['tracking'], 'aliases' => $i['aliases'], 'is_active' => true],
+            );
         }
     }
 

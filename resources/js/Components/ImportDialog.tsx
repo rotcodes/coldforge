@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { router } from '@inertiajs/react';
 import { toast } from 'sonner';
-import { CheckCircle2, FileUp, Loader2, Upload } from 'lucide-react';
+import { CheckCircle2, FileUp, Loader2, Sparkles, Upload, Wand2 } from 'lucide-react';
 import TagInput from '@/Components/TagInput';
 import { Button } from '@/Components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/Components/ui/dialog';
@@ -12,31 +12,63 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/Components/ui/table';
 import { cn, fmt } from '@/lib/utils';
 
-type Preview = { id: number; headers: string[]; rows: string[][]; total_rows: number };
+type Preview = {
+    id: number;
+    headers: string[];
+    rows: string[][];
+    total_rows: number;
+    suggested: Record<string, string>;
+    detected_format: string | null;
+    empty_email_rows: number;
+};
 type ImportState = { status: string; total_rows: number; imported_count: number; failed_count: number };
 
 const slug = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'field';
 
-const FIELDS = [
-    { value: 'skip', label: 'Skip' },
-    { value: 'email', label: 'Email' },
-    { value: 'first_name', label: 'First name' },
-    { value: 'last_name', label: 'Last name' },
-    { value: 'company', label: 'Company' },
-    { value: 'country', label: 'Country' },
-    { value: 'tags', label: 'Tags' },
+/** All possible mapping targets, grouped for the Select. The backend accepts anything in Contact::FIELDS plus "tags" + "custom:*". */
+const TARGETS: { group: string; options: { value: string; label: string }[] }[] = [
+    { group: 'Essential', options: [
+        { value: 'skip', label: 'Skip' },
+        { value: 'email', label: 'Email' },
+        { value: 'business', label: 'Business' },
+        { value: 'tags', label: 'Tags' },
+    ] },
+    { group: 'Industry', options: [
+        { value: 'industry', label: 'Industry (raw text)' },
+        { value: 'industry_slug', label: 'Industry slug (preset)' },
+    ] },
+    { group: 'Contact', options: [
+        { value: 'first_name', label: 'First name' },
+        { value: 'last_name', label: 'Last name' },
+        { value: 'company', label: 'Company (legacy)' },
+        { value: 'country', label: 'Country' },
+        { value: 'city_state', label: 'City / state' },
+        { value: 'website', label: 'Website' },
+        { value: 'decision_maker', label: 'Decision maker' },
+        { value: 'dm_role', label: 'Decision maker role' },
+        { value: 'direct_phone', label: 'Direct phone' },
+        { value: 'main_phone', label: 'Main phone' },
+        { value: 'company_linkedin', label: 'Company LinkedIn' },
+        { value: 'dm_linkedin', label: 'Decision maker LinkedIn' },
+    ] },
+    { group: 'Lead intel', options: [
+        { value: 'source_system', label: 'Source system (INTEL / CRM)' },
+        { value: 'external_id', label: 'External lead ID' },
+        { value: 'remote_status', label: 'Remote status' },
+        { value: 'remote_reply_status', label: 'Reply status' },
+        { value: 'lead_score', label: 'Lead score' },
+        { value: 'confidence', label: 'Confidence' },
+        { value: 'notion_url', label: 'Notion URL' },
+        { value: 'other_emails', label: 'Other emails' },
+    ] },
+    { group: 'Personalization', options: [
+        { value: 'personalized_opener', label: 'Personalized opener' },
+        { value: 'pain_evidence', label: 'Pain evidence' },
+        { value: 'recommended_offer', label: 'Recommended offer' },
+        { value: 'custom_subject', label: 'Email subject (per-lead)' },
+        { value: 'why_now_trigger', label: 'Why now trigger' },
+    ] },
 ];
-
-function guess(header: string): string {
-    const h = slug(header);
-    if (/^e_?mail/.test(h)) return 'email';
-    if (/^(first|first_?name|given_name|fname)$/.test(h)) return 'first_name';
-    if (/^(last|last_?name|surname|family_name|lname)$/.test(h)) return 'last_name';
-    if (/^(company|organization|organisation|company_name)$/.test(h)) return 'company';
-    if (/^country/.test(h)) return 'country';
-    if (/^tags?$/.test(h)) return 'tags';
-    return `custom:${h}`;
-}
 
 export default function ImportDialog({ open, onOpenChange, tags }: { open: boolean; onOpenChange: (o: boolean) => void; tags: string[] }) {
     const [step, setStep] = useState<'upload' | 'map' | 'progress'>('upload');
@@ -67,7 +99,7 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
             body.append('file', file);
             const { data } = await axios.post<Preview>('/csv-imports', body);
             setPreview(data);
-            setMapping(Object.fromEntries(data.headers.map((h) => [h, guess(h)])));
+            setMapping(data.suggested);
             setStep('map');
         } catch (e: any) {
             setError(e.response?.data?.errors?.file?.[0] ?? e.response?.data?.message ?? 'Upload failed.');
@@ -92,7 +124,6 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
         }
     };
 
-    // Poll progress every second until done.
     useEffect(() => {
         if (step !== 'progress' || !preview) return;
         const t = setInterval(async () => {
@@ -102,7 +133,7 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
                 clearInterval(t);
                 if (data.status === 'done') toast.success(`Imported ${fmt(data.imported_count)} contacts.`);
                 else toast.error('Import failed. Check the queue worker logs.');
-                router.reload({ only: ['contacts', 'tags'] });
+                router.reload({ only: ['contacts', 'tags', 'industries'] });
             }
         }, 1000);
         return () => clearInterval(t);
@@ -111,21 +142,16 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
     const hasEmail = Object.values(mapping).includes('email');
     const done = state?.status === 'done' || state?.status === 'failed';
     const processed = (state?.imported_count ?? 0) + (state?.failed_count ?? 0);
+    const willImport = preview ? preview.total_rows - preview.empty_email_rows : 0;
 
     return (
-        <Dialog
-            open={open}
-            onOpenChange={(o) => {
-                onOpenChange(o);
-                if (!o) setTimeout(reset, 200);
-            }}
-        >
+        <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setTimeout(reset, 200); }}>
             <DialogContent className={cn('max-h-[90vh] overflow-y-auto', step === 'map' ? 'sm:max-w-3xl' : 'sm:max-w-lg')}>
                 <DialogHeader>
                     <DialogTitle>Import contacts</DialogTitle>
                     <DialogDescription>
                         {step === 'upload' && 'Upload a CSV with a header row. Existing emails are updated, not duplicated.'}
-                        {step === 'map' && `${fmt(preview!.total_rows)} rows found. Map your columns to contact fields.`}
+                        {step === 'map' && `${fmt(preview!.total_rows)} rows found. Review the auto-mapping before importing.`}
                         {step === 'progress' && 'Importing in the background. You can close this dialog.'}
                     </DialogDescription>
                 </DialogHeader>
@@ -134,16 +160,9 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
                     <button
                         type="button"
                         onClick={() => inputRef.current?.click()}
-                        onDragOver={(e) => {
-                            e.preventDefault();
-                            setDrag(true);
-                        }}
+                        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
                         onDragLeave={() => setDrag(false)}
-                        onDrop={(e) => {
-                            e.preventDefault();
-                            setDrag(false);
-                            upload(e.dataTransfer.files[0]);
-                        }}
+                        onDrop={(e) => { e.preventDefault(); setDrag(false); upload(e.dataTransfer.files[0]); }}
                         className={cn(
                             'flex w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-12 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                             drag ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50',
@@ -160,25 +179,47 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
 
                 {step === 'map' && preview && (
                     <div className="space-y-5">
-                        <div className="grid gap-3 sm:grid-cols-2">
+                        {preview.detected_format && (
+                            <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
+                                <Wand2 className="size-4 shrink-0" />
+                                <span>
+                                    <strong>Detected format: {preview.detected_format}.</strong> Auto-mapped — review and adjust below.
+                                </span>
+                            </div>
+                        )}
+                        {preview.empty_email_rows > 0 && (
+                            <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+                                <Sparkles className="size-4 shrink-0" />
+                                <span>
+                                    {fmt(preview.empty_email_rows)} of {fmt(preview.total_rows)} rows have an empty email and will be skipped. {fmt(willImport)} will be imported.
+                                </span>
+                            </div>
+                        )}
+
+                        <div className="grid gap-2 sm:grid-cols-2">
                             {preview.headers.map((h) => {
-                                const custom = `custom:${slug(h)}`;
+                                const target = mapping[h];
+                                const isCustom = target?.startsWith('custom:');
+                                const customValue = isCustom ? target : `custom:${slug(h)}`;
+                                const isMapped = target && target !== 'skip';
                                 return (
-                                    <div key={h} className="flex items-center gap-3 rounded-lg border p-2.5">
-                                        <div className="min-w-0 flex-1 truncate font-mono text-xs" title={h}>
-                                            {h}
-                                        </div>
-                                        <Select value={mapping[h]} onValueChange={(v) => setMapping((m) => ({ ...m, [h]: v }))}>
-                                            <SelectTrigger className="h-8 w-40">
+                                    <div key={h} className={cn('flex items-center gap-3 rounded-lg border p-2.5 transition-colors', isMapped ? 'border-primary/30 bg-primary/5' : 'border-border')}>
+                                        <div className="min-w-0 flex-1 truncate font-mono text-xs" title={h}>{h}</div>
+                                        <Select value={target ?? 'skip'} onValueChange={(v) => setMapping((m) => ({ ...m, [h]: v }))}>
+                                            <SelectTrigger className="h-8 w-44">
                                                 <SelectValue />
                                             </SelectTrigger>
-                                            <SelectContent>
-                                                {FIELDS.map((f) => (
-                                                    <SelectItem key={f.value} value={f.value}>
-                                                        {f.label}
-                                                    </SelectItem>
+                                            <SelectContent className="max-h-80">
+                                                {TARGETS.map((g) => (
+                                                    <div key={g.group}>
+                                                        <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{g.group}</div>
+                                                        {g.options.map((o) => (
+                                                            <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                                                        ))}
+                                                    </div>
                                                 ))}
-                                                <SelectItem value={custom}>Custom: {slug(h)}</SelectItem>
+                                                <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Custom</div>
+                                                <SelectItem value={customValue}>Custom: {slug(h)}</SelectItem>
                                             </SelectContent>
                                         </Select>
                                     </div>
@@ -188,7 +229,7 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
 
                         <div className="space-y-1.5">
                             <Label>Tag all imported contacts</Label>
-                            <TagInput value={importTags} onChange={setImportTags} suggestions={tags} placeholder="e.g. saas-founders" />
+                            <TagInput value={importTags} onChange={setImportTags} suggestions={tags} placeholder="e.g. notion-import, batch-01" />
                         </div>
 
                         <div className="overflow-x-auto rounded-lg border">
@@ -196,9 +237,7 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
                                 <TableHeader>
                                     <TableRow>
                                         {preview.headers.map((h) => (
-                                            <TableHead key={h} className="whitespace-nowrap text-xs">
-                                                {h}
-                                            </TableHead>
+                                            <TableHead key={h} className="whitespace-nowrap text-xs">{h}</TableHead>
                                         ))}
                                     </TableRow>
                                 </TableHeader>
@@ -206,9 +245,7 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
                                     {preview.rows.map((r, i) => (
                                         <TableRow key={i}>
                                             {preview.headers.map((_, j) => (
-                                                <TableCell key={j} className="max-w-[180px] truncate whitespace-nowrap py-1.5 text-xs">
-                                                    {r[j]}
-                                                </TableCell>
+                                                <TableCell key={j} className="max-w-[180px] truncate whitespace-nowrap py-1.5 text-xs">{r[j]}</TableCell>
                                             ))}
                                         </TableRow>
                                     ))}
@@ -230,12 +267,8 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
                         </div>
                         <Progress value={state.total_rows ? (processed / state.total_rows) * 100 : 0} />
                         <div className="flex gap-6 font-mono text-xs text-muted-foreground">
-                            <span>
-                                <span className="text-emerald-500">{fmt(state.imported_count)}</span> imported
-                            </span>
-                            <span>
-                                <span className="text-red-500">{fmt(state.failed_count)}</span> invalid
-                            </span>
+                            <span><span className="text-emerald-500">{fmt(state.imported_count)}</span> imported</span>
+                            <span><span className="text-red-500">{fmt(state.failed_count)}</span> skipped</span>
                         </div>
                     </div>
                 )}
@@ -244,11 +277,9 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
 
                 {step === 'map' && (
                     <DialogFooter>
-                        <Button variant="ghost" onClick={reset}>
-                            Back
-                        </Button>
+                        <Button variant="ghost" onClick={reset}>Back</Button>
                         <Button onClick={start} disabled={!hasEmail || busy}>
-                            {busy ? <Loader2 className="animate-spin" /> : <Upload />} Import {fmt(preview!.total_rows)} rows
+                            {busy ? <Loader2 className="animate-spin" /> : <Upload />} Import {fmt(willImport)} rows
                         </Button>
                     </DialogFooter>
                 )}

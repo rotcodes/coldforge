@@ -25,18 +25,82 @@ class CampaignController extends Controller
     public function create()
     {
         return Inertia::render('Campaigns/Create', [
-            'templates' => Template::latest('updated_at')->get(['id', 'name', 'subject', 'from_email', 'updated_at']),
+            'templates' => Template::latest('updated_at')->get(['id', 'name', 'subject', 'from_email', 'updated_at', 'variables']),
             'tags' => ContactController::allTags(),
             'activeCount' => Contact::where('status', 'active')->count(),
             'senderCount' => Sender::where('is_active', true)->count(),
             'defaultCap' => config('coldforge.default_daily_cap'),
+            'industries' => \App\Models\Industry::where('is_active', true)->orderBy('label')->get(['slug', 'label']),
         ]);
     }
 
-    /** Live recipient count for the wizard's filter step. */
+    /** Live recipient count + tier breakdown for the wizard's audience/readiness steps. */
     public function count(Request $request)
     {
-        return response()->json(['count' => Contact::matchingFilter(['tags' => (array) $request->input('tags', [])])->count()]);
+        $filter = $this->filterFromRequest($request);
+        $contacts = Contact::matchingFilter($filter);
+
+        $breakdown = ['t1' => 0, 't2' => 0, 't3' => 0, 't4' => 0];
+        $contacts->clone()->select('industry_slug', 'business', 'company', 'personalized_opener', 'pain_evidence', 'recommended_offer')
+            ->chunkById(1000, function ($rows) use (&$breakdown) {
+                foreach ($rows as $r) {
+                    $tier = $r->readinessTier();
+                    if ($tier >= 1 && $tier <= 4) {
+                        $breakdown['t'.$tier]++;
+                    }
+                }
+            }, 'id');
+
+        return response()->json(['count' => array_sum($breakdown), 'tiers' => $breakdown]);
+    }
+
+    /** Render a sample email for a single contact — used by Campaigns wizard + Templates editor. */
+    public function preview(Request $request)
+    {
+        $data = $request->validate([
+            'template_id' => ['required', 'exists:templates,id'],
+            'contact_id' => ['nullable', 'exists:contacts,id'],
+        ]);
+
+        $template = Template::findOrFail($data['template_id']);
+        $contact = ! empty($data['contact_id'])
+            ? Contact::find($data['contact_id'])
+            : Contact::whereNotNull('email')->inRandomOrder()->first();
+
+        if (! $contact) {
+            return response()->json(['error' => 'No contacts yet. Import a CSV first.'], 422);
+        }
+
+        $vars = $contact->templateVars();
+        $rendered = \App\Services\EmailRenderer::render($template, $contact);
+
+        // Report which template vars actually used a fallback (empty source value replaced by non-empty resolved value).
+        $usedFallback = [];
+        foreach ($template->variables ?? [] as $v) {
+            $raw = $contact->getAttribute($v);
+            if ((! $raw || $raw === '') && ! empty($vars[$v])) {
+                $usedFallback[] = $v;
+            }
+        }
+
+        return response()->json([
+            'subject' => $rendered['subject'],
+            'html' => $rendered['html'],
+            'text' => $rendered['text'],
+            'contact' => ['id' => $contact->id, 'email' => $contact->email, 'business' => $contact->business ?: $contact->company, 'industry' => $contact->industry, 'tier' => $contact->readinessTier()],
+            'used_fallback' => $usedFallback,
+        ]);
+    }
+
+    private function filterFromRequest(Request $request): array
+    {
+        return [
+            'tags' => (array) $request->input('tags', []),
+            'industry_slugs' => array_values(array_filter((array) $request->input('industry_slugs', []))),
+            'source_system' => $request->input('source_system') ?: null,
+            'lead_score_min' => $request->input('lead_score_min') ?: null,
+            'require_industry' => (bool) $request->input('require_industry', false),
+        ];
     }
 
     public function store(Request $request)
@@ -46,13 +110,24 @@ class CampaignController extends Controller
             'template_id' => ['required', 'exists:templates,id'],
             'tags' => ['array'],
             'tags.*' => ['string'],
+            'industry_slugs' => ['array'],
+            'industry_slugs.*' => ['string', Rule::exists('industries', 'slug')],
+            'source_system' => ['nullable', 'string', 'max:20'],
+            'lead_score_min' => ['nullable', 'integer', 'min:0', 'max:100'],
+            'require_industry' => ['boolean'],
             'send_mode' => ['required', Rule::in(['now', 'later'])],
             'schedule_at' => ['nullable', 'required_if:send_mode,later', 'date', 'after:now'],
             'daily_cap' => ['required', 'integer', 'min:1', 'max:100000'],
             'sender_strategy' => ['required', Rule::in(['round_robin', 'priority'])],
         ]);
 
-        $filter = ['tags' => array_values($data['tags'] ?? [])];
+        $filter = [
+            'tags' => array_values($data['tags'] ?? []),
+            'industry_slugs' => array_values($data['industry_slugs'] ?? []),
+            'source_system' => $data['source_system'] ?? null,
+            'lead_score_min' => $data['lead_score_min'] ?? null,
+            'require_industry' => (bool) ($data['require_industry'] ?? false),
+        ];
         if (! Contact::matchingFilter($filter)->exists()) {
             return back()->withErrors(['tags' => 'No active contacts match this filter.']);
         }

@@ -1,11 +1,12 @@
 import { Link, usePage } from '@inertiajs/react';
-import { Mail, ShieldCheck, User } from 'lucide-react';
+import { Mail, Replace, ShieldCheck, User } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import { cn } from '@/lib/utils';
 
 const tabs = [
     { label: 'Senders', href: '/settings/senders', icon: Mail },
     { label: 'Deliverability', href: '/settings/deliverability', icon: ShieldCheck },
+    { label: 'Fallbacks', href: '/settings/fallbacks', icon: Replace },
     { label: 'Profile', href: '/settings/profile', icon: User },
 ];
 
