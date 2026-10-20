@@ -63,7 +63,7 @@ class TemplateController extends Controller
             return back()->with('error', 'Add an active sender first (Settings → Senders).');
         }
 
-        $contact = Contact::firstWhere('email', strtolower($data['email'])) ?? new Contact(['email' => $data['email'], 'first_name' => 'Friend']);
+        $contact = Contact::firstWhere('email', strtolower($data['email'])) ?? new Contact(['email' => $data['email'], 'first_name' => 'Friend', 'business' => 'your business']);
         $mail = EmailRenderer::render($template, $contact);
 
         $result = SenderRegistry::make($sender)->sendTransactional([
@@ -94,12 +94,14 @@ class TemplateController extends Controller
         ]);
     }
 
-    /** Variables offered in the "Insert variable" menu: core contact fields + known custom field keys. */
+    /** Variables offered in the "Insert variable" menu: smart + core fields + known custom field keys. */
     private function fields(): array
     {
         $custom = Contact::whereNotNull('custom_fields')->latest('id')->limit(500)->pluck('custom_fields')
             ->flatMap(fn ($f) => array_keys((array) $f))->unique()->values()->all();
 
-        return array_values(array_unique([...Contact::FIELDS, ...$custom, 'unsubscribe_url']));
+        $smart = ['industry_label', 'workflow_examples', 'tracking_examples'];
+
+        return array_values(array_unique([...$smart, ...Contact::FIELDS, ...$custom, 'unsubscribe_url']));
     }
 }

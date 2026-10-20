@@ -10,7 +10,7 @@ export default function Field({
     className,
     children,
 }: {
-    label: string;
+    label: React.ReactNode;
     error?: string;
     hint?: string;
     htmlFor?: string;

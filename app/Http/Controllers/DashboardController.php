@@ -36,7 +36,32 @@ class DashboardController extends Controller
             'campaigns' => Campaign::with('template:id,name')->latest()->limit(5)->get(),
             'templates' => Template::orderBy('name')->get(['id', 'name']),
             'contactCount' => Contact::where('status', 'active')->count(),
+            'readiness' => $this->readiness(),
         ]);
+    }
+
+    /** Aggregate counts for the dashboard's readiness tile. One scan of active contacts. */
+    private function readiness(): array
+    {
+        $tiers = [1 => 0, 2 => 0, 3 => 0, 4 => 0];
+        $unmapped = 0;
+
+        Contact::where('status', 'active')
+            ->whereNotNull('email')->where('email', '!=', '')
+            ->select('industry', 'industry_slug', 'business', 'company', 'personalized_opener', 'pain_evidence', 'recommended_offer', 'email')
+            ->chunkById(2000, function ($rows) use (&$tiers, &$unmapped) {
+                foreach ($rows as $r) {
+                    $tier = $r->readinessTier();
+                    if (isset($tiers[$tier])) {
+                        $tiers[$tier]++;
+                    }
+                    if ($r->industry && ! $r->industry_slug) {
+                        $unmapped++;
+                    }
+                }
+            }, 'id');
+
+        return ['tiers' => $tiers, 'unmapped' => $unmapped];
     }
 
     /** Count of sends per day for the last 30 days on a timestamp column, zero-filled. */

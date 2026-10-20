@@ -1,7 +1,7 @@
 import { FormEvent } from 'react';
 import { Link, useForm } from '@inertiajs/react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { ArrowUpRight, Loader2, Plus, Send, Upload } from 'lucide-react';
+import { ArrowUpRight, HelpCircle, Loader2, Plus, Send, Sparkles, Upload } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import TiltCard from '@/Components/TiltCard';
 import StatusBadge from '@/Components/StatusBadge';
@@ -11,7 +11,7 @@ import { Button } from '@/Components/ui/button';
 import { Card } from '@/Components/ui/card';
 import { Input } from '@/Components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/Components/ui/select';
-import { fmt, pct } from '@/lib/utils';
+import { cn, fmt, pct } from '@/lib/utils';
 import type { Campaign } from '@/types';
 
 type Point = { date: string; value: number };
@@ -23,6 +23,53 @@ interface Props {
     campaigns: Campaign[];
     templates: { id: number; name: string }[];
     contactCount: number;
+    readiness: { tiers: { '1': number; '2': number; '3': number; '4': number }; unmapped: number };
+}
+
+function ReadinessCard({ readiness }: { readiness: Props['readiness'] }) {
+    const total = Object.values(readiness.tiers).reduce((a, b) => a + Number(b), 0);
+    const rows = [
+        { label: 'Rich data', count: readiness.tiers['4'], color: 'bg-primary', tier: 4 },
+        { label: 'Industry mapped', count: readiness.tiers['3'], color: 'bg-emerald-500', tier: 3 },
+        { label: 'Business only', count: readiness.tiers['2'], color: 'bg-amber-500', tier: 2 },
+        { label: 'Email only', count: readiness.tiers['1'], color: 'bg-neutral-400', tier: 1 },
+    ];
+    return (
+        <TiltCard hero className="p-5">
+            <div className="mb-3 flex items-center gap-2">
+                <div className="grid size-8 place-items-center rounded-lg bg-brand text-white shadow-glow"><Sparkles className="size-4" /></div>
+                <div>
+                    <h2 className="text-sm font-semibold">Audience readiness</h2>
+                    <p className="text-xs text-muted-foreground">How personalized your sends can be.</p>
+                </div>
+            </div>
+            {total === 0 ? (
+                <p className="text-sm text-muted-foreground">No contacts yet. <Link href="/contacts" className="text-primary hover:underline">Import a CSV</Link>.</p>
+            ) : (
+                <div className="space-y-1.5">
+                    {rows.map((r) => {
+                        const p = total ? (r.count / total) * 100 : 0;
+                        return (
+                            <div key={r.label} className="flex items-center gap-2 text-xs">
+                                <div className="w-24 shrink-0 text-muted-foreground">{r.label}</div>
+                                <div className="relative h-2.5 flex-1 overflow-hidden rounded bg-muted">
+                                    <div className={cn('h-full transition-all duration-500', r.color)} style={{ width: `${p}%` }} />
+                                </div>
+                                <div className="w-12 shrink-0 text-right font-mono text-muted-foreground">{fmt(r.count)}</div>
+                            </div>
+                        );
+                    })}
+                    {readiness.unmapped > 0 && (
+                        <Link href="/industries" className="mt-3 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 transition-colors hover:bg-amber-500/15 dark:text-amber-300">
+                            <HelpCircle className="size-3.5 shrink-0" />
+                            <span className="flex-1">{fmt(readiness.unmapped)} contacts have unmapped industry text</span>
+                            <ArrowUpRight className="size-3" />
+                        </Link>
+                    )}
+                </div>
+            )}
+        </TiltCard>
+    );
 }
 
 function Sparkline({ data, id }: { data: Point[]; id: string }) {
@@ -94,7 +141,7 @@ function QuickSend({ templates }: { templates: Props['templates'] }) {
     );
 }
 
-export default function Dashboard({ stats, chart, campaigns, templates, contactCount }: Props) {
+export default function Dashboard({ stats, chart, campaigns, templates, contactCount, readiness }: Props) {
     return (
         <AppLayout title="Dashboard">
             <PageHeader
@@ -163,7 +210,9 @@ export default function Dashboard({ stats, chart, campaigns, templates, contactC
                 <QuickSend templates={templates} />
             </div>
 
-            <TiltCard className="mt-4 overflow-hidden">
+            <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                <ReadinessCard readiness={readiness} />
+                <TiltCard className="overflow-hidden lg:col-span-2">
                 <div className="flex items-center justify-between p-5 pb-3">
                     <h2 className="text-sm font-semibold">Recent campaigns</h2>
                     <Link href="/campaigns" className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
@@ -198,7 +247,8 @@ export default function Dashboard({ stats, chart, campaigns, templates, contactC
                         ))}
                     </ul>
                 )}
-            </TiltCard>
+                </TiltCard>
+            </div>
         </AppLayout>
     );
 }

@@ -5,6 +5,8 @@ use App\Http\Controllers\CampaignController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\CsvImportController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\FallbacksController;
+use App\Http\Controllers\IndustryController;
 use App\Http\Controllers\SenderController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\TemplateController;
@@ -36,10 +38,18 @@ Route::middleware('auth')->group(function () {
     Route::post('/templates/{template}/test', [TemplateController::class, 'test']);
 
     Route::get('/campaigns/count', [CampaignController::class, 'count']);
+    Route::post('/campaigns/preview', [CampaignController::class, 'preview']);
     Route::resource('campaigns', CampaignController::class)->only(['index', 'create', 'store', 'show', 'destroy']);
     Route::post('/campaigns/{campaign}/launch', [CampaignController::class, 'launch']);
     Route::post('/campaigns/{campaign}/pause', [CampaignController::class, 'pause']);
     Route::post('/campaigns/{campaign}/resume', [CampaignController::class, 'resume']);
+
+    Route::get('/industries', [IndustryController::class, 'index']);
+    Route::post('/industries', [IndustryController::class, 'store']);
+    Route::put('/industries/{industry}', [IndustryController::class, 'update']);
+    Route::delete('/industries/{industry}', [IndustryController::class, 'destroy']);
+    Route::post('/industries/rematch', [IndustryController::class, 'rematch']);
+    Route::post('/industries/assign-unmapped', [IndustryController::class, 'assignUnmapped']);
 
     Route::prefix('settings')->group(function () {
         Route::redirect('/', '/settings/senders');
@@ -55,5 +65,8 @@ Route::middleware('auth')->group(function () {
         Route::put('/password', [SettingsController::class, 'updatePassword']);
 
         Route::get('/deliverability', [SettingsController::class, 'deliverability']);
+
+        Route::get('/fallbacks', [FallbacksController::class, 'index']);
+        Route::put('/fallbacks', [FallbacksController::class, 'update']);
     });
 });

@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import { Link, router } from '@inertiajs/react';
-import { Activity, Pencil, Send, Trash2 } from 'lucide-react';
+import { Activity, ExternalLink, Pencil, Send, Sparkles, Trash2 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import { confirmDialog, visit } from '@/Components/ConfirmDialog';
 import StatusBadge from '@/Components/StatusBadge';
+import TierBadge from '@/Components/TierBadge';
 import TiltCard from '@/Components/TiltCard';
 import ContactDialog from '@/Components/ContactDialog';
 import { Button } from '@/Components/ui/button';
 import { Card } from '@/Components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/tabs';
 import { dateTime } from '@/lib/utils';
-import type { Contact } from '@/types';
+import type { Contact, Industry } from '@/types';
 
 interface Send {
     id: number;
@@ -30,16 +32,30 @@ interface Event {
     send: { campaign: { id: number; name: string } };
 }
 
-export default function ContactShow({ contact, sends, events }: { contact: Contact; sends: Send[]; events: Event[] }) {
+export default function ContactShow({ contact, sends, events, tier, industry }: { contact: Contact; sends: Send[]; events: Event[]; tier: number; industry: Industry | null }) {
     const [editOpen, setEditOpen] = useState(false);
-    const name = [contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.email;
+    const name = contact.decision_maker || [contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.email;
 
-    const details: [string, string | null][] = [
+    const basic: [string, React.ReactNode][] = [
         ['Email', contact.email],
-        ['Company', contact.company],
+        ['Business', contact.business || contact.company],
+        ['City / state', contact.city_state],
+        ['Website', contact.website ? <a href={contact.website.startsWith('http') ? contact.website : `https://${contact.website}`} target="_blank" rel="noopener" className="inline-flex items-center gap-1 text-primary hover:underline">{contact.website} <ExternalLink className="size-3" /></a> : null],
         ['Country', contact.country],
-        ['Source', contact.source],
-        ...Object.entries(contact.custom_fields ?? {}).map(([k, v]) => [k.replace(/_/g, ' '), String(v)] as [string, string]),
+        ['Source', contact.source_system || contact.source],
+        ['Lead score', contact.lead_score != null ? <span className="font-mono">{contact.lead_score}</span> : null],
+        ['Confidence', contact.confidence],
+    ];
+
+    const intel: [string, React.ReactNode][] = [
+        ['Decision maker', contact.decision_maker],
+        ['Role', contact.dm_role],
+        ['Direct phone', contact.direct_phone],
+        ['Main phone', contact.main_phone],
+        ['Company LinkedIn', contact.company_linkedin ? <a href={contact.company_linkedin} target="_blank" rel="noopener" className="truncate text-primary hover:underline">{contact.company_linkedin}</a> : null],
+        ['DM LinkedIn', contact.dm_linkedin ? <a href={contact.dm_linkedin} target="_blank" rel="noopener" className="truncate text-primary hover:underline">{contact.dm_linkedin}</a> : null],
+        ['Notion page', contact.notion_url ? <a href={contact.notion_url} target="_blank" rel="noopener" className="inline-flex items-center gap-1 text-primary hover:underline">Open <ExternalLink className="size-3" /></a> : null],
+        ['Remote status', contact.remote_status],
     ];
 
     return (
@@ -47,11 +63,20 @@ export default function ContactShow({ contact, sends, events }: { contact: Conta
             <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center">
                 <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-brand text-lg font-semibold text-white shadow-glow">{name.slice(0, 1).toUpperCase()}</div>
                 <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <h1 className="truncate text-2xl font-semibold tracking-tight">{name}</h1>
                         <StatusBadge status={contact.status} />
+                        <TierBadge tier={tier} />
+                        {industry && (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-xs text-primary">
+                                <Sparkles className="size-3" /> {industry.label}
+                            </span>
+                        )}
                     </div>
-                    <p className="truncate text-sm text-muted-foreground">{contact.email}</p>
+                    <p className="truncate text-sm text-muted-foreground">
+                        {contact.email}
+                        {contact.business && <span className="ml-2">· {contact.business}</span>}
+                    </p>
                 </div>
                 <div className="flex gap-2">
                     <Button variant="outline" onClick={() => setEditOpen(true)}>
@@ -68,30 +93,35 @@ export default function ContactShow({ contact, sends, events }: { contact: Conta
             </div>
 
             <div className="grid gap-4 lg:grid-cols-3">
-                <TiltCard hero className="p-5">
-                    <h2 className="mb-4 text-sm font-semibold">Details</h2>
-                    <dl className="space-y-3 text-sm">
-                        {details.map(([k, v]) => (
-                            <div key={k} className="flex justify-between gap-4">
-                                <dt className="capitalize text-muted-foreground">{k}</dt>
-                                <dd className="truncate text-right">{v || '—'}</dd>
+                <TiltCard hero className="p-5 lg:col-span-1">
+                    <Tabs defaultValue="basic">
+                        <TabsList className="w-full">
+                            <TabsTrigger value="basic" className="flex-1">Basic</TabsTrigger>
+                            <TabsTrigger value="intel" className="flex-1">Lead intel</TabsTrigger>
+                            <TabsTrigger value="personalization" className="flex-1">Pitch</TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="basic">
+                            <DetailsList items={basic} />
+                            <div className="mt-3 flex justify-between gap-4 text-sm">
+                                <span className="text-muted-foreground">Tags</span>
+                                <div className="flex flex-wrap justify-end gap-1">
+                                    {(contact.tags ?? []).length ? contact.tags!.map((t) => (
+                                        <span key={t} className="rounded-md bg-primary/15 px-1.5 py-0.5 text-xs text-primary">{t}</span>
+                                    )) : <span className="text-sm text-muted-foreground">—</span>}
+                                </div>
                             </div>
-                        ))}
-                        <div className="flex justify-between gap-4">
-                            <dt className="text-muted-foreground">Tags</dt>
-                            <dd className="flex flex-wrap justify-end gap-1">
-                                {(contact.tags ?? []).length ? (
-                                    contact.tags!.map((t) => (
-                                        <span key={t} className="rounded-md bg-primary/15 px-1.5 py-0.5 text-xs text-primary">
-                                            {t}
-                                        </span>
-                                    ))
-                                ) : (
-                                    '—'
-                                )}
-                            </dd>
-                        </div>
-                    </dl>
+                        </TabsContent>
+                        <TabsContent value="intel">
+                            <DetailsList items={intel} />
+                        </TabsContent>
+                        <TabsContent value="personalization" className="space-y-3 text-sm">
+                            <Block title="Personalized opener" text={contact.personalized_opener} />
+                            <Block title="Pain evidence" text={contact.pain_evidence} />
+                            <Block title="Recommended offer" text={contact.recommended_offer} />
+                            <Block title="Why now trigger" text={contact.why_now_trigger} />
+                            <Block title="Custom subject" text={contact.custom_subject} />
+                        </TabsContent>
+                    </Tabs>
                 </TiltCard>
 
                 <div className="space-y-4 lg:col-span-2">
@@ -143,7 +173,29 @@ export default function ContactShow({ contact, sends, events }: { contact: Conta
                 </div>
             </div>
 
-            <ContactDialog open={editOpen} onOpenChange={setEditOpen} contact={contact} tags={[]} statuses={['active', 'bounced', 'unsubscribed', 'complained']} />
+            <ContactDialog open={editOpen} onOpenChange={setEditOpen} contact={contact} tags={[]} statuses={['active', 'bounced', 'unsubscribed', 'complained']} industries={industry ? [{ slug: industry.slug, label: industry.label }] : []} />
         </AppLayout>
+    );
+}
+
+function DetailsList({ items }: { items: [string, React.ReactNode][] }) {
+    return (
+        <dl className="space-y-3 text-sm">
+            {items.map(([k, v]) => (
+                <div key={k} className="flex justify-between gap-4">
+                    <dt className="shrink-0 text-muted-foreground">{k}</dt>
+                    <dd className="min-w-0 truncate text-right">{v || '—'}</dd>
+                </div>
+            ))}
+        </dl>
+    );
+}
+
+function Block({ title, text }: { title: string; text: string | null | undefined }) {
+    return (
+        <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{title}</div>
+            {text ? <p className="mt-1 text-sm leading-relaxed">{text}</p> : <p className="mt-1 text-sm italic text-muted-foreground/70">— none —</p>}
+        </div>
     );
 }

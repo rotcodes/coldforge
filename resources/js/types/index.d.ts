@@ -29,11 +29,47 @@ export interface Contact {
     last_name: string | null;
     company: string | null;
     country: string | null;
+    business: string | null;
+    industry: string | null;
+    industry_slug: string | null;
+    city_state: string | null;
+    website: string | null;
+    decision_maker: string | null;
+    dm_role: string | null;
+    direct_phone: string | null;
+    main_phone: string | null;
+    company_linkedin: string | null;
+    dm_linkedin: string | null;
+    source_system: string | null;
+    external_id: string | null;
+    remote_status: string | null;
+    remote_reply_status: string | null;
+    lead_score: number | null;
+    confidence: string | null;
+    personalized_opener: string | null;
+    pain_evidence: string | null;
+    recommended_offer: string | null;
+    custom_subject: string | null;
+    why_now_trigger: string | null;
+    notion_url: string | null;
+    other_emails: string | null;
     custom_fields: Record<string, string> | null;
     status: ContactStatus;
     source: string;
     tags: string[] | null;
     created_at: string;
+    tier?: number;
+}
+
+export interface Industry {
+    id: number;
+    slug: string;
+    label: string;
+    workflows: string;
+    tracking: string;
+    aliases: string[] | null;
+    is_active: boolean;
+    contact_count?: number;
 }
 
 export interface Template {

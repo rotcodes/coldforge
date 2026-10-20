@@ -111,3 +111,73 @@ Append-only log. Newest at the bottom.
 - Put the project under git and pushed it to a **private** GitHub repo `rotcodes/coldforge` (branch `main`). `.env`, `vendor/`, `node_modules/`, `public/build/` and uploaded CSVs are ignored; scanned for keys/passwords before the first commit.
 - Decision: private repo, because it holds production hostnames, the deploy layout and the email pipeline. No secrets are committed either way.
 - Next: deploy per README → add a real Brevo key/SMTP → Settings → Senders → Test → Quick send to own inbox → first small campaign.
+
+## [2026-10-20 Phase 2] Smart personalization — industry-aware templates & 29-column CSV ingestion
+
+Big feature add: templates now resolve 3 "smart" variables per contact (industry_label / workflow_examples / tracking_examples) against an editable Industries table, with operator-controlled fallbacks for when data is missing. Imports auto-detect the Pure Intelligence / US CRM 29-column format, store all the lead-level intel columns in dedicated fields, fuzzy-match raw industry text to a preset slug, and skip rows without an email or already-replied-to.
+
+Branch: `feature/smart-personalization` → PR to `main` after local verification.
+
+### Why
+Operator wanted one global template whose first line adapts to each lead's industry (equipment dealer / wholesale / warehouse / machining ...) so sends feel personal at scale. Their existing CSVs from Notion already carry 29 columns of per-lead research (industry, pain evidence, recommended offer, Notion URL, ...) that was being thrown away. New system captures all of it, surfaces readiness tiers so the operator can see at a glance how personalized any send will be, and degrades gracefully for future CSVs that have less data.
+
+### What (data model)
+- `industries` table: `slug / label / workflows / tracking / aliases(json) / is_active`. Seeded with 10 presets from `config/coldforge.php` (equipment_dealer, steel_fabrication, wholesale_distribution, warehouse, pos_retail, engineering_services, machining, construction, auto_parts, hvac).
+- `contacts` extended with 24 new nullable columns:
+  - **Rich**: `business, industry, industry_slug, city_state, website, decision_maker, dm_role, direct_phone, main_phone, company_linkedin, dm_linkedin`
+  - **Source tracking**: `source_system, external_id, remote_status, remote_reply_status, lead_score, confidence, notion_url, other_emails` + `UNIQUE(source_system, external_id)` for re-import dedup
+  - **Lead-level personalization**: `personalized_opener, pain_evidence, recommended_offer, custom_subject, why_now_trigger`
+- `settings` key `variable_fallbacks` (JSON) stores operator-editable fallback strings per smart variable.
+
+### What (services)
+- `App\Services\IndustryMatcher` — resolves free-text industry to slug via alias exact match + longest-substring match. Request-cached.
+- `App\Services\CsvHeaderMapper` — guesses the target field for ~45 known CSV headers (plus a `detectFormat()` that recognises the Pure Intel / US CRM signature).
+- `App\Services\TemplateFallbacks` — thin reader/writer for the `variable_fallbacks` setting with sane defaults.
+- `Contact::templateVars()` now returns 20+ keys, including the 3 smart industry vars (resolved against `Industry` row + fallback chain) and the lead-level vars.
+- `Contact::matchingFilter()` extended to accept `industry_slugs[], source_system, lead_score_min, require_industry` on top of `tags[]`.
+- `Contact::readinessTier()` returns 0..4 ladder used by UI badges and the campaign readiness check.
+
+### What (controllers + routes)
+- New: `IndustryController` (index + CRUD + `rematch` + `assignUnmapped`), `FallbacksController` (index + update), `CampaignController::preview` (per-contact live render for the editor + wizard).
+- `CsvImportController::store` now returns `{suggested, detected_format, empty_email_rows}`.
+- `ImportContactsJob` handles the new columns, runs fuzzy-matcher at import time, and auto-marks contacts whose remote status is SENT/CONTACTED/REPLIED (or has any Reply Status value) as `status=unsubscribed`. Re-imports preserve a user's local status (never unsubs to active). Rows without an email count as failed.
+- `DashboardController` reports a readiness tier breakdown + unmapped-industry count.
+
+### What (UI)
+- New top-level sidebar entry: **Industries**. Full CRUD page with per-industry contact counts, an "unmapped text" dialog for bulk-assigning raw strings, and a one-click "Re-match unmapped" button.
+- New Settings tab: **Fallbacks**. One row per smart variable with inline reset-to-default.
+- Contacts/Index: tier badge column, legend, and a "More filters" bar (industry / source / lead score / has-email).
+- Contact/Show: Tabs — Basic / Lead intel / Pitch — with LinkedIn/Notion links and tier badge next to status.
+- ContactDialog: 3-tab form (Basic / Lead intel / Personalization) with the industry preset dropdown.
+- ImportDialog: shows a green "detected format" chip, auto-fills the mapping, warns about empty-email rows, and groups the target field dropdown by purpose (Essential / Industry / Contact / Lead intel / Personalization).
+- Templates/Editor: right-side **Variables** panel grouped by purpose (click-to-insert), plus a "Preview with real contact" button that renders the template against a random live contact and reports which variables used a fallback.
+- Campaigns/Create: new **Readiness** step (step 3 of 4) that shows the tier breakdown as horizontal bars + a live preview iframe + the "Require mapped industry" toggle.
+- Dashboard: new **Audience readiness** TiltCard tile with tier bars and an amber "unmapped contacts" link to Industries when any exist.
+- `Components/TierBadge.tsx` + `TierLegend` export for consistent tier chips everywhere.
+
+### What (tests)
+`tests/Feature/PersonalizationTest.php` — 10 tests covering:
+- Industries seed, IndustryMatcher (exact + substring), CsvHeaderMapper (recognition + field guess).
+- `Contact::templateVars()` resolves industry preset AND falls back to saved fallback text.
+- `readinessTier()` ladder (0..4).
+- `matchingFilter()` honours each new filter dimension.
+- End-to-end import of a Pure Intel-shaped CSV: auto-mapping suggestions, auto-match of `Construction equipment` to `equipment_dealer`, auto-unsub when Reply Status is filled, empty-email skip counted correctly.
+- Rendering with null industry contains fallback text, no raw `{{` placeholders in the output.
+- Industries CRUD endpoints work and clear the matcher cache.
+- Fallbacks round-trip through the settings API.
+
+### Operator must do (first run after `git pull`)
+1. `php artisan migrate` — adds the 24 contacts columns + `industries` table.
+2. `php artisan db:seed` — seeds the 10 default industries (idempotent — safe on existing DB).
+3. `npm install && npm run build` (nothing new in deps, but `public/build/` needs refresh).
+4. Open **Industries** in the sidebar → tweak phrases if desired. Open **Settings → Fallbacks** → set the default `workflow_examples` / `tracking_examples` for leads without industry (defaults are generic enough).
+5. Re-import a Pure Intel CSV via **Contacts → Import CSV** — mapping is now auto-filled; just click Import. Industry text matches a slug automatically; whatever doesn't match shows up in the amber "unmapped" banner on the Industries page.
+6. Edit your main template to use `{{industry_label}}`, `{{workflow_examples}}`, `{{tracking_examples}}` instead of hard-coded phrases. Preview with a real contact via the "Preview with real contact" button in the editor.
+7. Create a campaign — the new Readiness step shows how many contacts fall into each tier before you launch. Toggle "Require mapped industry" to force strict personalization or allow fallbacks.
+
+### Decisions worth remembering
+- **Industries table over config file.** The operator will tweak phrasing often; stashing it in DB (with a UI) beats editing `config/coldforge.php` and clearing caches each time. Seeder is idempotent so defaults can be re-applied.
+- **Industry fuzzy-match is additive.** Raw text is always preserved in the `industry` column; `industry_slug` is set only on an unambiguous match. Operator can bulk-assign the rest from the Industries page.
+- **"Require industry" is per-campaign, defaults ON.** This is the strict/fallback knob. ON = skip unmapped contacts (full personalization enforced). OFF = fallback text used from Settings → Fallbacks. The dashboard tile + wizard preview make this reversible without surprise.
+- **Re-imports preserve a contact's local status.** If someone was unsubscribed locally, a fresh CSV won't quietly reactivate them. Remote status (SENT / CONTACTED / REPLIED / any Reply Status) still auto-unsubs on first import.
+- **Backwards compatible.** Existing templates with `{{first_name}}` keep working. Existing contacts without the new fields keep working (fallbacks everywhere). Nothing was renamed or dropped.
