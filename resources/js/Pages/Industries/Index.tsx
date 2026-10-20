@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useState } from 'react';
 import axios from 'axios';
 import { router, useForm } from '@inertiajs/react';
-import { Brain, Building2, Check, HelpCircle, Loader2, MoreHorizontal, Pencil, Plus, Sparkles, Trash2, Wand2, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Bot, Brain, Building2, Check, HelpCircle, Loader2, MoreHorizontal, Pencil, Plus, Sparkles, Trash2, Wand2, X, Zap } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/PageHeader';
 import EmptyState from '@/Components/EmptyState';
@@ -162,12 +163,22 @@ type Suggestion = {
     contact_count: number;
 };
 
+type Source = 'groq' | 'heuristic';
+
+const LOADING_LINES: Record<Source | 'init', string[]> = {
+    init: ['Scanning unmapped text…', 'Picking the right clusterer…'],
+    groq: ['Sending to Llama 3.3 70B via Groq…', 'Grouping semantically similar businesses…', 'Drafting workflow phrases…', 'Finalizing clusters…'],
+    heuristic: ['Tokenizing text…', 'Scoring token overlap…', 'Clustering by shared keywords…'],
+};
+
 function SuggestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
     const [loading, setLoading] = useState(false);
     const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+    const [source, setSource] = useState<Source>('heuristic');
     const [accepted, setAccepted] = useState<Record<number, boolean>>({});
     const [editingIdx, setEditingIdx] = useState<number | null>(null);
     const [submitting, setSubmitting] = useState(false);
+    const [loadingLineIdx, setLoadingLineIdx] = useState(0);
 
     useEffect(() => {
         if (!open) return;
@@ -175,14 +186,23 @@ function SuggestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
         setSuggestions([]);
         setAccepted({});
         setEditingIdx(null);
-        axios.get<{ suggestions: Suggestion[] }>('/industries/suggest')
+        setLoadingLineIdx(0);
+        axios.get<{ source: Source; suggestions: Suggestion[] }>('/industries/suggest')
             .then((r) => {
+                setSource(r.data.source);
                 setSuggestions(r.data.suggestions);
-                // Default: all suggestions accepted
                 setAccepted(Object.fromEntries(r.data.suggestions.map((_, i) => [i, true])));
             })
             .finally(() => setLoading(false));
     }, [open]);
+
+    // Rotate the loading line every ~1.1s while waiting. Gives the request an "AI thinking" rhythm.
+    useEffect(() => {
+        if (!loading) return;
+        const lines = source === 'groq' ? LOADING_LINES.groq : LOADING_LINES.init;
+        const t = setInterval(() => setLoadingLineIdx((i) => (i + 1) % lines.length), 1100);
+        return () => clearInterval(t);
+    }, [loading, source]);
 
     const toggle = (i: number) => setAccepted({ ...accepted, [i]: !accepted[i] });
 
@@ -206,6 +226,8 @@ function SuggestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
     const totalContacts = suggestions.filter((_, i) => accepted[i]).reduce((s, c) => s + c.contact_count, 0);
     const acceptedCount = Object.values(accepted).filter(Boolean).length;
 
+    const loadingLines = source === 'groq' ? LOADING_LINES.groq : LOADING_LINES.init;
+
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="flex max-h-[90vh] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
@@ -213,75 +235,125 @@ function SuggestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                     <DialogTitle className="flex items-center gap-2">
                         <Brain className="size-5 text-primary" />
                         Suggested industries
+                        {!loading && suggestions.length > 0 && <SourceBadge source={source} />}
                     </DialogTitle>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        Auto-clustered from your unmapped text. Edit any you want, uncheck ones you don't need, then create them in one go.
+                        {source === 'groq'
+                            ? 'Semantically clustered by Llama 3.3 via Groq. Edit anything, uncheck what you don\'t need, then create them in one go.'
+                            : 'Auto-clustered from your unmapped text. Edit anything, uncheck what you don\'t need, then create them in one go.'}
                     </p>
                 </DialogHeader>
 
                 <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
                     {loading && (
-                        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
-                            <Loader2 className="size-5 animate-spin text-primary" />
-                            Analyzing unmapped text…
+                        <div className="flex flex-col items-center justify-center gap-5 py-20">
+                            <div className="relative">
+                                <motion.div
+                                    className="absolute inset-0 rounded-full bg-primary/30 blur-xl"
+                                    animate={{ scale: [1, 1.4, 1], opacity: [0.4, 0.8, 0.4] }}
+                                    transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                                />
+                                <motion.div
+                                    className="relative grid size-14 place-items-center rounded-2xl bg-gradient-to-br from-primary/90 to-brand text-primary-foreground shadow-glow"
+                                    animate={{ rotate: [0, 5, -5, 0] }}
+                                    transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                                >
+                                    <Brain className="size-7" />
+                                </motion.div>
+                            </div>
+                            <div className="min-h-10 w-full text-center">
+                                <AnimatePresence mode="wait">
+                                    <motion.div
+                                        key={loadingLineIdx}
+                                        initial={{ opacity: 0, y: 8 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -8 }}
+                                        transition={{ duration: 0.3 }}
+                                        className="text-sm font-medium text-foreground"
+                                    >
+                                        {loadingLines[loadingLineIdx % loadingLines.length]}
+                                    </motion.div>
+                                </AnimatePresence>
+                                <div className="mt-1 flex items-center justify-center gap-1">
+                                    {[0, 1, 2].map((d) => (
+                                        <motion.span
+                                            key={d}
+                                            className="size-1.5 rounded-full bg-primary"
+                                            animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1.2, 0.8] }}
+                                            transition={{ duration: 1.2, repeat: Infinity, delay: d * 0.2, ease: 'easeInOut' }}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
                         </div>
                     )}
+
                     {!loading && suggestions.length === 0 && (
                         <div className="py-16 text-center text-sm text-muted-foreground">
                             Nothing to suggest. All unmapped text is either too unique to cluster or too small to warrant a preset.
                         </div>
                     )}
+
                     <div className="space-y-3">
-                        {suggestions.map((s, i) => {
-                            const isAccepted = !!accepted[i];
-                            const isEditing = editingIdx === i;
-                            return (
-                                <div key={i} className={cn('rounded-xl border p-3 transition-all', isAccepted ? 'border-primary/40 bg-primary/5' : 'border-border opacity-60')}>
-                                    <div className="flex items-start gap-3">
-                                        <button type="button" onClick={() => toggle(i)} className={cn('mt-0.5 grid size-5 shrink-0 place-items-center rounded border transition-colors', isAccepted ? 'border-primary bg-primary text-primary-foreground' : 'border-border')} aria-label={isAccepted ? 'Unselect' : 'Select'}>
-                                            {isAccepted && <Check className="size-3" />}
-                                        </button>
-                                        <div className="min-w-0 flex-1">
-                                            {isEditing ? (
-                                                <div className="space-y-2">
-                                                    <Input value={s.label} onChange={(e) => update(i, { label: e.target.value })} placeholder="Label" className="font-medium" />
-                                                    <Input value={s.slug} onChange={(e) => update(i, { slug: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') })} placeholder="Slug (lowercase, underscores)" className="font-mono text-xs" />
-                                                    <Textarea value={s.workflows} onChange={(e) => update(i, { workflows: e.target.value })} rows={2} placeholder="Workflows" className="text-xs" />
-                                                    <Textarea value={s.tracking} onChange={(e) => update(i, { tracking: e.target.value })} rows={2} placeholder="Tracking" className="text-xs" />
-                                                </div>
-                                            ) : (
-                                                <>
-                                                    <div className="flex items-center gap-2">
-                                                        <h3 className="font-medium">{s.label}</h3>
-                                                        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">{s.slug}</code>
-                                                        <span className="ml-auto font-mono text-xs text-primary">{s.contact_count} contacts</span>
+                        <AnimatePresence>
+                            {!loading && suggestions.map((s, i) => {
+                                const isAccepted = !!accepted[i];
+                                const isEditing = editingIdx === i;
+                                return (
+                                    <motion.div
+                                        key={i}
+                                        initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        transition={{ duration: 0.35, delay: i * 0.06, ease: 'easeOut' }}
+                                        className={cn('rounded-xl border p-3 transition-colors', isAccepted ? 'border-primary/40 bg-primary/5' : 'border-border opacity-60')}
+                                    >
+                                        <div className="flex items-start gap-3">
+                                            <button type="button" onClick={() => toggle(i)} className={cn('mt-0.5 grid size-5 shrink-0 place-items-center rounded border transition-colors', isAccepted ? 'border-primary bg-primary text-primary-foreground' : 'border-border')} aria-label={isAccepted ? 'Unselect' : 'Select'}>
+                                                {isAccepted && <Check className="size-3" />}
+                                            </button>
+                                            <div className="min-w-0 flex-1">
+                                                {isEditing ? (
+                                                    <div className="space-y-2">
+                                                        <Input value={s.label} onChange={(e) => update(i, { label: e.target.value })} placeholder="Label" className="font-medium" />
+                                                        <Input value={s.slug} onChange={(e) => update(i, { slug: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') })} placeholder="Slug (lowercase, underscores)" className="font-mono text-xs" />
+                                                        <Textarea value={s.workflows} onChange={(e) => update(i, { workflows: e.target.value })} rows={2} placeholder="Workflows" className="text-xs" />
+                                                        <Textarea value={s.tracking} onChange={(e) => update(i, { tracking: e.target.value })} rows={2} placeholder="Tracking" className="text-xs" />
                                                     </div>
-                                                    <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
-                                                        <span className="text-foreground/70">Workflows:</span> {s.workflows}
-                                                    </p>
-                                                </>
-                                            )}
-                                            <div className="mt-2 flex flex-wrap gap-1">
-                                                {s.aliases.slice(0, 5).map((a) => (
-                                                    <span key={a} className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{a}</span>
-                                                ))}
-                                                {s.aliases.length > 5 && <span className="text-[10px] text-muted-foreground">+{s.aliases.length - 5} more</span>}
+                                                ) : (
+                                                    <>
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <h3 className="font-medium">{s.label}</h3>
+                                                            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">{s.slug}</code>
+                                                            <span className="ml-auto font-mono text-xs text-primary">{s.contact_count} contacts</span>
+                                                        </div>
+                                                        <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
+                                                            <span className="text-foreground/70">Workflows:</span> {s.workflows}
+                                                        </p>
+                                                    </>
+                                                )}
+                                                <div className="mt-2 flex flex-wrap gap-1">
+                                                    {s.aliases.slice(0, 5).map((a) => (
+                                                        <span key={a} className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{a}</span>
+                                                    ))}
+                                                    {s.aliases.length > 5 && <span className="self-center text-[10px] text-muted-foreground">+{s.aliases.length - 5} more</span>}
+                                                </div>
                                             </div>
+                                            <Button type="button" variant="ghost" size="sm" onClick={() => setEditingIdx(isEditing ? null : i)}>
+                                                {isEditing ? 'Done' : 'Edit'}
+                                            </Button>
                                         </div>
-                                        <Button type="button" variant="ghost" size="sm" onClick={() => setEditingIdx(isEditing ? null : i)}>
-                                            {isEditing ? 'Done' : 'Edit'}
-                                        </Button>
-                                    </div>
-                                </div>
-                            );
-                        })}
+                                    </motion.div>
+                                );
+                            })}
+                        </AnimatePresence>
                     </div>
                 </div>
 
-                {suggestions.length > 0 && (
-                    <DialogFooter className="shrink-0 flex-row items-center justify-between border-t bg-background px-6 py-4 sm:justify-between">
+                {!loading && suggestions.length > 0 && (
+                    <DialogFooter className="shrink-0 flex-col gap-3 border-t bg-background px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
                         <div className="text-sm text-muted-foreground">
-                            {acceptedCount} of {suggestions.length} selected · {totalContacts} contacts will be matched
+                            <span className="font-mono text-foreground">{acceptedCount}</span> of {suggestions.length} selected ·{' '}
+                            <span className="font-mono text-primary">{totalContacts}</span> contacts will be matched
                         </div>
                         <div className="flex gap-2">
                             <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
@@ -293,6 +365,26 @@ function SuggestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                 )}
             </DialogContent>
         </Dialog>
+    );
+}
+
+function SourceBadge({ source }: { source: Source }) {
+    if (source === 'groq') {
+        return (
+            <motion.span
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3 }}
+                className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-gradient-to-r from-primary/10 to-brand/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary"
+            >
+                <Bot className="size-3" /> AI · Llama 3.3
+            </motion.span>
+        );
+    }
+    return (
+        <span className="inline-flex items-center gap-1 rounded-full border bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <Zap className="size-3" /> Heuristic
+        </span>
     );
 }
 
