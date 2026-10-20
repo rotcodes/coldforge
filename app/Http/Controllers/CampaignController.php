@@ -41,7 +41,7 @@ class CampaignController extends Controller
         $contacts = Contact::matchingFilter($filter);
 
         $breakdown = ['t1' => 0, 't2' => 0, 't3' => 0, 't4' => 0];
-        $contacts->clone()->select('industry_slug', 'business', 'company', 'personalized_opener', 'pain_evidence', 'recommended_offer')
+        $contacts->clone()->select('id', 'industry_slug', 'business', 'company', 'personalized_opener', 'pain_evidence', 'recommended_offer', 'email')
             ->chunkById(1000, function ($rows) use (&$breakdown) {
                 foreach ($rows as $r) {
                     $tier = $r->readinessTier();
