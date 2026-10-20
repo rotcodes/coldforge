@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
+import axios from 'axios';
 import { router, useForm } from '@inertiajs/react';
-import { Building2, HelpCircle, Loader2, MoreHorizontal, Pencil, Plus, Sparkles, Trash2, Wand2, X } from 'lucide-react';
+import { Brain, Building2, Check, HelpCircle, Loader2, MoreHorizontal, Pencil, Plus, Sparkles, Trash2, Wand2, X } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/PageHeader';
 import EmptyState from '@/Components/EmptyState';
@@ -32,6 +33,7 @@ export default function IndustriesIndex({ industries, unmappedCount, unmappedSam
     const [editing, setEditing] = useState<Industry | null>(null);
     const [open, setOpen] = useState(false);
     const [unmappedOpen, setUnmappedOpen] = useState(false);
+    const [suggestOpen, setSuggestOpen] = useState(false);
 
     const openForm = (i: Industry | null) => {
         setEditing(i);
@@ -57,6 +59,11 @@ export default function IndustriesIndex({ industries, unmappedCount, unmappedSam
                 description="Industry presets drive the smart variables in your templates. Edit the phrasing and aliases here."
                 actions={
                     <>
+                        {unmappedCount > 0 && (
+                            <Button variant="outline" onClick={() => setSuggestOpen(true)} className="border-primary/40 text-primary hover:bg-primary/5">
+                                <Brain /> Auto-suggest industries
+                            </Button>
+                        )}
                         <Button variant="outline" onClick={rematch}>
                             <Wand2 /> Re-match unmapped
                         </Button>
@@ -141,7 +148,151 @@ export default function IndustriesIndex({ industries, unmappedCount, unmappedSam
 
             <IndustryDialog open={open} onOpenChange={setOpen} industry={editing} />
             <UnmappedDialog open={unmappedOpen} onOpenChange={setUnmappedOpen} samples={unmappedSamples} industries={industries} />
+            <SuggestDialog open={suggestOpen} onOpenChange={setSuggestOpen} />
         </AppLayout>
+    );
+}
+
+type Suggestion = {
+    slug: string;
+    label: string;
+    workflows: string;
+    tracking: string;
+    aliases: string[];
+    contact_count: number;
+};
+
+function SuggestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+    const [loading, setLoading] = useState(false);
+    const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+    const [accepted, setAccepted] = useState<Record<number, boolean>>({});
+    const [editingIdx, setEditingIdx] = useState<number | null>(null);
+    const [submitting, setSubmitting] = useState(false);
+
+    useEffect(() => {
+        if (!open) return;
+        setLoading(true);
+        setSuggestions([]);
+        setAccepted({});
+        setEditingIdx(null);
+        axios.get<{ suggestions: Suggestion[] }>('/industries/suggest')
+            .then((r) => {
+                setSuggestions(r.data.suggestions);
+                // Default: all suggestions accepted
+                setAccepted(Object.fromEntries(r.data.suggestions.map((_, i) => [i, true])));
+            })
+            .finally(() => setLoading(false));
+    }, [open]);
+
+    const toggle = (i: number) => setAccepted({ ...accepted, [i]: !accepted[i] });
+
+    const update = (i: number, patch: Partial<Suggestion>) => {
+        const next = [...suggestions];
+        next[i] = { ...next[i], ...patch };
+        setSuggestions(next);
+    };
+
+    const submit = () => {
+        const chosen = suggestions.filter((_, i) => accepted[i]);
+        if (chosen.length === 0) return;
+        setSubmitting(true);
+        router.post('/industries/accept-suggestions', { suggestions: chosen }, {
+            preserveScroll: true,
+            onSuccess: () => onOpenChange(false),
+            onFinish: () => setSubmitting(false),
+        });
+    };
+
+    const totalContacts = suggestions.filter((_, i) => accepted[i]).reduce((s, c) => s + c.contact_count, 0);
+    const acceptedCount = Object.values(accepted).filter(Boolean).length;
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="flex max-h-[90vh] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+                <DialogHeader className="shrink-0 border-b px-6 py-5">
+                    <DialogTitle className="flex items-center gap-2">
+                        <Brain className="size-5 text-primary" />
+                        Suggested industries
+                    </DialogTitle>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        Auto-clustered from your unmapped text. Edit any you want, uncheck ones you don't need, then create them in one go.
+                    </p>
+                </DialogHeader>
+
+                <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+                    {loading && (
+                        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+                            <Loader2 className="size-5 animate-spin text-primary" />
+                            Analyzing unmapped text…
+                        </div>
+                    )}
+                    {!loading && suggestions.length === 0 && (
+                        <div className="py-16 text-center text-sm text-muted-foreground">
+                            Nothing to suggest. All unmapped text is either too unique to cluster or too small to warrant a preset.
+                        </div>
+                    )}
+                    <div className="space-y-3">
+                        {suggestions.map((s, i) => {
+                            const isAccepted = !!accepted[i];
+                            const isEditing = editingIdx === i;
+                            return (
+                                <div key={i} className={cn('rounded-xl border p-3 transition-all', isAccepted ? 'border-primary/40 bg-primary/5' : 'border-border opacity-60')}>
+                                    <div className="flex items-start gap-3">
+                                        <button type="button" onClick={() => toggle(i)} className={cn('mt-0.5 grid size-5 shrink-0 place-items-center rounded border transition-colors', isAccepted ? 'border-primary bg-primary text-primary-foreground' : 'border-border')} aria-label={isAccepted ? 'Unselect' : 'Select'}>
+                                            {isAccepted && <Check className="size-3" />}
+                                        </button>
+                                        <div className="min-w-0 flex-1">
+                                            {isEditing ? (
+                                                <div className="space-y-2">
+                                                    <Input value={s.label} onChange={(e) => update(i, { label: e.target.value })} placeholder="Label" className="font-medium" />
+                                                    <Input value={s.slug} onChange={(e) => update(i, { slug: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') })} placeholder="Slug (lowercase, underscores)" className="font-mono text-xs" />
+                                                    <Textarea value={s.workflows} onChange={(e) => update(i, { workflows: e.target.value })} rows={2} placeholder="Workflows" className="text-xs" />
+                                                    <Textarea value={s.tracking} onChange={(e) => update(i, { tracking: e.target.value })} rows={2} placeholder="Tracking" className="text-xs" />
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="font-medium">{s.label}</h3>
+                                                        <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">{s.slug}</code>
+                                                        <span className="ml-auto font-mono text-xs text-primary">{s.contact_count} contacts</span>
+                                                    </div>
+                                                    <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
+                                                        <span className="text-foreground/70">Workflows:</span> {s.workflows}
+                                                    </p>
+                                                </>
+                                            )}
+                                            <div className="mt-2 flex flex-wrap gap-1">
+                                                {s.aliases.slice(0, 5).map((a) => (
+                                                    <span key={a} className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{a}</span>
+                                                ))}
+                                                {s.aliases.length > 5 && <span className="text-[10px] text-muted-foreground">+{s.aliases.length - 5} more</span>}
+                                            </div>
+                                        </div>
+                                        <Button type="button" variant="ghost" size="sm" onClick={() => setEditingIdx(isEditing ? null : i)}>
+                                            {isEditing ? 'Done' : 'Edit'}
+                                        </Button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {suggestions.length > 0 && (
+                    <DialogFooter className="shrink-0 flex-row items-center justify-between border-t bg-background px-6 py-4 sm:justify-between">
+                        <div className="text-sm text-muted-foreground">
+                            {acceptedCount} of {suggestions.length} selected · {totalContacts} contacts will be matched
+                        </div>
+                        <div className="flex gap-2">
+                            <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+                            <Button onClick={submit} disabled={acceptedCount === 0 || submitting}>
+                                {submitting ? <Loader2 className="animate-spin" /> : <Sparkles />} Create & match
+                            </Button>
+                        </div>
+                    </DialogFooter>
+                )}
+            </DialogContent>
+        </Dialog>
     );
 }
 
