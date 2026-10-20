@@ -84,8 +84,9 @@ You cluster raw business/industry text strings into coherent cold-outreach segme
 Rules:
 - Group semantically similar businesses, even when the words differ (e.g. "swiss machining" and "cnc machine shop" belong together).
 - Prefer 4-10 clusters total. Never leave a text unassigned.
-- EVERY input string must appear verbatim in exactly ONE aliases array.
-- Workflows and tracking must be specific to that cluster's industry, not generic.
+- EVERY input string must appear in exactly ONE aliases array.
+- CRITICAL: Each alias must be the raw string ONLY. Do NOT append anything like "(N contacts)" or any suffix — the parenthesised counts in the input are metadata for you, strip them from your output.
+- Workflows and tracking must be short, specific to that cluster's industry, non-empty.
 - Slugs are lowercase with underscores, max 50 chars, descriptive (e.g. "machining_shop", "wire_harness_mfr").
 
 Return ONLY valid JSON matching this exact shape (no prose, no markdown fences):
@@ -96,13 +97,13 @@ Return ONLY valid JSON matching this exact shape (no prose, no markdown fences):
       "label": "precision machining shop",
       "workflows": "RFQs, drawing revisions, CNC jobs, and quality documentation",
       "tracking": "quotes, drawings, production jobs, and QC records",
-      "aliases": ["<exact input string>", "<another exact input string>"]
+      "aliases": ["Swiss machining", "CNC machine shop"]
     }
   ]
 }
 PROMPT;
 
-        $user = "Cluster these industry strings from imported leads:\n\n{$list}";
+        $user = "Cluster these industry strings. The number in parentheses after each is how many contacts have that text — informational only, strip it from your aliases.\n\n{$list}";
 
         return [
             'model' => self::MODEL,
@@ -139,13 +140,18 @@ PROMPT;
             }
 
             // Count contacts covered — only aliases that actually exist in our input.
+            // Defensively strip "(N contacts)" suffix in case the model ignored the instruction.
             $covered = 0;
             $validAliases = [];
             foreach ($aliases as $a) {
-                $lookup = $textCounts[$a] ?? $knownTexts[strtolower($a)] ?? null;
+                $clean = trim(preg_replace('/\s*\(\s*\d+\s*contacts?\s*\)\s*$/i', '', $a));
+                if ($clean === '') {
+                    continue;
+                }
+                $lookup = $textCounts[$clean] ?? $knownTexts[strtolower($clean)] ?? null;
                 if ($lookup !== null) {
                     $covered += $lookup;
-                    $validAliases[] = $a; // keep the model's casing but the backend matches case-insensitively on import anyway
+                    $validAliases[] = $clean;
                 }
             }
 
