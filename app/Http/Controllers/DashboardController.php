@@ -48,7 +48,7 @@ class DashboardController extends Controller
 
         Contact::where('status', 'active')
             ->whereNotNull('email')->where('email', '!=', '')
-            ->select('industry', 'industry_slug', 'business', 'company', 'personalized_opener', 'pain_evidence', 'recommended_offer', 'email')
+            ->select('id', 'industry', 'industry_slug', 'business', 'company', 'personalized_opener', 'pain_evidence', 'recommended_offer', 'email')
             ->chunkById(2000, function ($rows) use (&$tiers, &$unmapped) {
                 foreach ($rows as $r) {
                     $tier = $r->readinessTier();
