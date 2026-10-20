@@ -28,7 +28,11 @@ class ImportContactsJob implements ShouldQueue
 
     public int $timeout = 1800;
 
-    private const UNSUBSCRIBE_STATUSES = ['SENT', 'CONTACTED', 'REPLIED', 'OPTOUT', 'OPT-OUT', 'UNSUBSCRIBED', 'BOUNCED'];
+    /** Remote statuses that mean "do not pitch" regardless of reply status. */
+    private const UNSUBSCRIBE_STATUSES = ['SENT', 'CONTACTED', 'REPLIED', 'OPTOUT', 'OPT-OUT', 'UNSUBSCRIBED', 'BOUNCED', 'SKIP'];
+
+    /** Reply-status values that genuinely mean the lead engaged (vs. workflow flags like "Waiting" or "Not contacted"). */
+    private const ENGAGED_REPLY_STATUSES = ['REPLIED', 'BOUNCED', 'OPT-OUT', 'OPTOUT', 'UNSUBSCRIBED', 'OPTED OUT', 'OPTED-OUT', 'HARD BOUNCE', 'SOFT BOUNCE', 'COMPLAINED'];
 
     public function __construct(public CsvImport $import) {}
 
@@ -119,11 +123,22 @@ class ImportContactsJob implements ShouldQueue
 
     private function isUnsubscribed(string $combined): bool
     {
-        if (preg_match('/\|[^|]+$/', $combined, $m) && trim($m[0], '|') !== '') {
-            return true; // any non-empty reply status means they engaged — don't re-pitch
+        // Split "<REMOTE_STATUS>|<REPLY_STATUS>" back out.
+        [$remote, $reply] = array_pad(explode('|', $combined, 2), 2, '');
+        $remote = trim($remote);
+        $reply = trim($reply);
+
+        // Reply status only counts as unsubscribe when it signals real engagement,
+        // not workflow flags like "Waiting" or "Not contacted".
+        foreach (self::ENGAGED_REPLY_STATUSES as $s) {
+            if ($reply !== '' && str_contains($reply, $s)) {
+                return true;
+            }
         }
+
+        // Remote status wins if it's a terminal / already-contacted state.
         foreach (self::UNSUBSCRIBE_STATUSES as $s) {
-            if (str_contains($combined, $s)) {
+            if ($remote !== '' && str_contains($remote, $s)) {
                 return true;
             }
         }
