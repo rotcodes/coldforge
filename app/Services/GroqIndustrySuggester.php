@@ -93,18 +93,28 @@ class GroqIndustrySuggester
                 ['role' => 'user', 'content' => $user],
             ],
             'temperature' => 0.2,
-            // GPT-OSS 120B burns a lot of internal reasoning tokens before producing output;
-            // 4096 wasn't enough and Groq returned json_validate_failed. 8192 gives headroom.
-            'max_tokens' => 8192,
-            'response_format' => ['type' => 'json_object'],
+            // GPT-OSS 120B burns many reasoning tokens before output; give it room.
+            'max_tokens' => 16384,
+            // Intentionally no response_format: Groq's json_object mode validates the whole
+            // completion as JSON, which fails whenever the model's reasoning or any trailing
+            // whitespace/comment slips through. We extract JSON ourselves below.
         ];
     }
 
     private function parseClusters(string $raw, array $textCounts): array
     {
-        $json = json_decode($raw, true);
+        // Strip markdown fences and prose around the JSON. Extract the first {...} that parses.
+        $trimmed = trim($raw);
+        $trimmed = preg_replace('/^```(?:json)?\s*/i', '', $trimmed);
+        $trimmed = preg_replace('/\s*```\s*$/', '', $trimmed);
+
+        $json = json_decode($trimmed, true);
+        if (! is_array($json) && preg_match('/\{.*\}/s', $trimmed, $m)) {
+            $json = json_decode($m[0], true);
+        }
+
         if (! is_array($json) || ! isset($json['clusters']) || ! is_array($json['clusters'])) {
-            Log::warning('Groq suggester bad JSON', ['raw' => $raw]);
+            Log::warning('Groq suggester bad JSON', ['raw' => substr($raw, 0, 500)]);
 
             return [];
         }
