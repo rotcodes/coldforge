@@ -17,9 +17,10 @@ use Illuminate\Support\Facades\Log;
 class GroqIndustrySuggester
 {
     private const ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
-    private const MODEL = 'llama-3.3-70b-versatile';
+    // Groq's current large OSS model. Smaller/faster alternative: 'openai/gpt-oss-20b'.
+    private const MODEL = 'openai/gpt-oss-120b';
     private const MAX_TEXTS = 150;
-    private const TIMEOUT_SECONDS = 15;
+    private const TIMEOUT_SECONDS = 20;
 
     public function available(): bool
     {
