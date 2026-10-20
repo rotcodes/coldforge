@@ -167,7 +167,7 @@ type Source = 'groq' | 'heuristic';
 
 const LOADING_LINES: Record<Source | 'init', string[]> = {
     init: ['Scanning unmapped text…', 'Picking the right clusterer…'],
-    groq: ['Sending to Llama 3.3 70B via Groq…', 'Grouping semantically similar businesses…', 'Drafting workflow phrases…', 'Finalizing clusters…'],
+    groq: ['Sending to GPT-OSS 120B via Groq…', 'Grouping semantically similar businesses…', 'Drafting workflow phrases…', 'Finalizing clusters…'],
     heuristic: ['Tokenizing text…', 'Scoring token overlap…', 'Clustering by shared keywords…'],
 };
 
@@ -239,7 +239,7 @@ function SuggestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                     </DialogTitle>
                     <p className="mt-1 text-sm text-muted-foreground">
                         {source === 'groq'
-                            ? 'Semantically clustered by Llama 3.3 via Groq. Edit anything, uncheck what you don\'t need, then create them in one go.'
+                            ? 'Semantically clustered by GPT-OSS 120B via Groq. Edit anything, uncheck what you don\'t need, then create them in one go.'
                             : 'Auto-clustered from your unmapped text. Edit anything, uncheck what you don\'t need, then create them in one go.'}
                     </p>
                 </DialogHeader>
@@ -377,7 +377,7 @@ function SourceBadge({ source }: { source: Source }) {
                 transition={{ duration: 0.3 }}
                 className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-gradient-to-r from-primary/10 to-brand/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary"
             >
-                <Bot className="size-3" /> AI · Llama 3.3
+                <Bot className="size-3" /> AI · GPT-OSS 120B
             </motion.span>
         );
     }
