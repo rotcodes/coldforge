@@ -78,32 +78,13 @@ class GroqIndustrySuggester
     {
         $list = collect($texts)->map(fn ($cnt, $text) => "- {$text} ({$cnt} contacts)")->implode("\n");
 
-        $system = <<<'PROMPT'
-You cluster raw business/industry text strings into coherent cold-outreach segments.
+        $system = 'You cluster business categories for cold outreach. Output JSON only: '
+            .'{"clusters":[{"slug":"...","label":"...","workflows":"...","tracking":"...","aliases":["..."]}]}. '
+            .'4-8 clusters. Every input belongs to exactly one cluster. '
+            .'Aliases are the raw input strings verbatim WITHOUT the "(N contacts)" suffix. '
+            .'Slug: lowercase_underscores. Workflows/tracking: one short phrase specific to the cluster.';
 
-Rules:
-- Group semantically similar businesses, even when the words differ (e.g. "swiss machining" and "cnc machine shop" belong together).
-- Prefer 4-10 clusters total. Never leave a text unassigned.
-- EVERY input string must appear in exactly ONE aliases array.
-- CRITICAL: Each alias must be the raw string ONLY. Do NOT append anything like "(N contacts)" or any suffix — the parenthesised counts in the input are metadata for you, strip them from your output.
-- Workflows and tracking must be short, specific to that cluster's industry, non-empty.
-- Slugs are lowercase with underscores, max 50 chars, descriptive (e.g. "machining_shop", "wire_harness_mfr").
-
-Return ONLY valid JSON matching this exact shape (no prose, no markdown fences):
-{
-  "clusters": [
-    {
-      "slug": "machining_shop",
-      "label": "precision machining shop",
-      "workflows": "RFQs, drawing revisions, CNC jobs, and quality documentation",
-      "tracking": "quotes, drawings, production jobs, and QC records",
-      "aliases": ["Swiss machining", "CNC machine shop"]
-    }
-  ]
-}
-PROMPT;
-
-        $user = "Cluster these industry strings. The number in parentheses after each is how many contacts have that text — informational only, strip it from your aliases.\n\n{$list}";
+        $user = "Cluster:\n{$list}";
 
         return [
             'model' => self::MODEL,
