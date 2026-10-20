@@ -19,7 +19,11 @@ class CsvImportController extends Controller
         $path = $file->store('imports');
 
         $handle = fopen(Storage::path($path), 'r');
-        $headers = array_map(fn ($h) => trim($h, " \t\n\r\0\x0B\xEF\xBB\xBF"), fgetcsv($handle) ?: []);
+        // Strip UTF-8 BOM if present. Must happen BEFORE fgetcsv so it recognises the first field's enclosure quotes.
+        if (fread($handle, 3) !== "\xEF\xBB\xBF") {
+            rewind($handle);
+        }
+        $headers = array_map(fn ($h) => trim($h, " \t\n\r\0\x0B\"'"), fgetcsv($handle) ?: []);
         $rows = [];
         $total = 0;
         $emailColIndex = null;

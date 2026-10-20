@@ -40,7 +40,10 @@ class ImportContactsJob implements ShouldQueue
         $matcher = new IndustryMatcher;
 
         $handle = fopen(Storage::path($import->path), 'r');
-        $headers = array_map(fn ($h) => trim($h, " \t\n\r\0\x0B\xEF\xBB\xBF"), fgetcsv($handle) ?: []);
+        if (fread($handle, 3) !== "\xEF\xBB\xBF") {
+            rewind($handle);
+        }
+        $headers = array_map(fn ($h) => trim($h, " \t\n\r\0\x0B\"'"), fgetcsv($handle) ?: []);
         $mapping = $import->mapping ?? [];
         $source = 'csv_import_'.$import->id;
 
