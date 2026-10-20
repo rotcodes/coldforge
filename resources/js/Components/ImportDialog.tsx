@@ -146,8 +146,8 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
 
     return (
         <Dialog open={open} onOpenChange={(o) => { onOpenChange(o); if (!o) setTimeout(reset, 200); }}>
-            <DialogContent className={cn('max-h-[90vh] overflow-y-auto overflow-x-hidden', step === 'map' ? 'sm:max-w-3xl' : 'sm:max-w-lg')}>
-                <DialogHeader>
+            <DialogContent className={cn('flex max-h-[90vh] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0', step === 'map' ? 'sm:max-w-3xl' : 'sm:max-w-lg')}>
+                <DialogHeader className="shrink-0 border-b px-6 py-5">
                     <DialogTitle>Import contacts</DialogTitle>
                     <DialogDescription>
                         {step === 'upload' && 'Upload a CSV with a header row. Existing emails are updated, not duplicated.'}
@@ -155,6 +155,8 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
                         {step === 'progress' && 'Importing in the background. You can close this dialog.'}
                     </DialogDescription>
                 </DialogHeader>
+
+                <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
 
                 {step === 'upload' && (
                     <button
@@ -275,8 +277,10 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
 
                 {error && <p className="text-sm font-medium text-red-500">{error}</p>}
 
+                </div>
+
                 {step === 'map' && (
-                    <DialogFooter>
+                    <DialogFooter className="shrink-0 border-t bg-background px-6 py-4">
                         <Button variant="ghost" onClick={reset}>Back</Button>
                         <Button onClick={start} disabled={!hasEmail || busy}>
                             {busy ? <Loader2 className="animate-spin" /> : <Upload />} Import {fmt(willImport)} rows
@@ -284,7 +288,7 @@ export default function ImportDialog({ open, onOpenChange, tags }: { open: boole
                     </DialogFooter>
                 )}
                 {step === 'progress' && done && (
-                    <DialogFooter>
+                    <DialogFooter className="shrink-0 border-t bg-background px-6 py-4">
                         <Button onClick={() => onOpenChange(false)}>Done</Button>
                     </DialogFooter>
                 )}
