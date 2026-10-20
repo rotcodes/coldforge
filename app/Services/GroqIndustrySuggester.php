@@ -82,7 +82,11 @@ class GroqIndustrySuggester
             .'{"clusters":[{"slug":"...","label":"...","workflows":"...","tracking":"...","aliases":["..."]}]}. '
             .'4-8 clusters. Every input belongs to exactly one cluster. '
             .'Aliases are the raw input strings verbatim WITHOUT the "(N contacts)" suffix. '
-            .'Slug: lowercase_underscores. Workflows/tracking: one short phrase specific to the cluster.';
+            .'Slug: lowercase_underscores. '
+            .'workflows and tracking must each be a COMMA-SEPARATED NOUN PHRASE (not a sentence, not a verb). '
+            .'They fit into the email template "how do you currently manage {workflows}?" and "You can track {tracking}". '
+            .'Example workflows: "custom packaging orders, production runs, materials sourcing, and dispatch". '
+            .'Example tracking: "orders, production jobs, materials, and dispatch status".';
 
         $user = "Cluster:\n{$list}";
 
