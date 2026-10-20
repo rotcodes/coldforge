@@ -50,6 +50,8 @@ Route::middleware('auth')->group(function () {
     Route::delete('/industries/{industry}', [IndustryController::class, 'destroy']);
     Route::post('/industries/rematch', [IndustryController::class, 'rematch']);
     Route::post('/industries/assign-unmapped', [IndustryController::class, 'assignUnmapped']);
+    Route::get('/industries/suggest', [IndustryController::class, 'suggest']);
+    Route::post('/industries/accept-suggestions', [IndustryController::class, 'acceptSuggestions']);
 
     Route::prefix('settings')->group(function () {
         Route::redirect('/', '/settings/senders');

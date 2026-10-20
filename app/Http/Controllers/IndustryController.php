@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\Contact;
 use App\Models\Industry;
 use App\Services\IndustryMatcher;
+use App\Services\IndustrySuggester;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -99,6 +101,52 @@ class IndustryController extends Controller
             ->update(['industry_slug' => $data['slug']]);
 
         return back()->with('success', "Assigned {$count} contacts to this industry.");
+    }
+
+    /** Suggest draft industry presets by clustering unmapped text. Returns JSON, no DB writes. */
+    public function suggest()
+    {
+        return response()->json(['suggestions' => (new IndustrySuggester)->suggest()]);
+    }
+
+    /** Create the operator-approved suggestions and immediately match the covered contacts. */
+    public function acceptSuggestions(Request $request)
+    {
+        $data = $request->validate([
+            'suggestions' => ['required', 'array', 'min:1'],
+            'suggestions.*.slug' => ['required', 'string', 'max:60', 'regex:/^[a-z0-9_]+$/'],
+            'suggestions.*.label' => ['required', 'string', 'max:150'],
+            'suggestions.*.workflows' => ['required', 'string', 'max:1000'],
+            'suggestions.*.tracking' => ['required', 'string', 'max:1000'],
+            'suggestions.*.aliases' => ['array'],
+            'suggestions.*.aliases.*' => ['string', 'max:200'],
+        ]);
+
+        $created = 0;
+        $matched = 0;
+        DB::transaction(function () use ($data, &$created, &$matched) {
+            foreach ($data['suggestions'] as $s) {
+                // firstOrCreate so re-submitting the same slug is safe.
+                $industry = Industry::firstOrCreate(
+                    ['slug' => $s['slug']],
+                    ['label' => $s['label'], 'workflows' => $s['workflows'], 'tracking' => $s['tracking'], 'aliases' => $s['aliases'] ?? [], 'is_active' => true],
+                );
+                if ($industry->wasRecentlyCreated) {
+                    $created++;
+                }
+
+                // Assign every contact whose raw industry text equals one of the aliases.
+                if (! empty($s['aliases'])) {
+                    $matched += Contact::whereIn('industry', $s['aliases'])
+                        ->whereNull('industry_slug')
+                        ->update(['industry_slug' => $industry->slug]);
+                }
+            }
+        });
+
+        IndustryMatcher::clearCache();
+
+        return back()->with('success', "Created {$created} industries and matched {$matched} contacts.");
     }
 
     private function validated(Request $request, ?Industry $industry = null): array
