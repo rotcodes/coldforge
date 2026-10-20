@@ -112,7 +112,9 @@ PROMPT;
                 ['role' => 'user', 'content' => $user],
             ],
             'temperature' => 0.2,
-            'max_tokens' => 4096,
+            // GPT-OSS 120B burns a lot of internal reasoning tokens before producing output;
+            // 4096 wasn't enough and Groq returned json_validate_failed. 8192 gives headroom.
+            'max_tokens' => 8192,
             'response_format' => ['type' => 'json_object'],
         ];
     }
