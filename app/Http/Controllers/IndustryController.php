@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Contact;
 use App\Models\Industry;
+use App\Services\GroqIndustrySuggester;
 use App\Services\IndustryMatcher;
 use App\Services\IndustrySuggester;
 use Illuminate\Http\Request;
@@ -103,10 +104,29 @@ class IndustryController extends Controller
         return back()->with('success', "Assigned {$count} contacts to this industry.");
     }
 
-    /** Suggest draft industry presets by clustering unmapped text. Returns JSON, no DB writes. */
+    /**
+     * Suggest draft industry presets by clustering unmapped text. Returns JSON, no DB writes.
+     * Prefers the LLM-powered Groq clusterer when a GROQ_API_KEY is configured;
+     * falls back to the keyword-greedy heuristic if the LLM is unavailable or empty.
+     */
     public function suggest()
     {
-        return response()->json(['suggestions' => (new IndustrySuggester)->suggest()]);
+        $groq = new GroqIndustrySuggester;
+        $source = 'heuristic';
+        $suggestions = [];
+
+        if ($groq->available()) {
+            $suggestions = $groq->suggest();
+            if (! empty($suggestions)) {
+                $source = 'groq';
+            }
+        }
+
+        if (empty($suggestions)) {
+            $suggestions = (new IndustrySuggester)->suggest();
+        }
+
+        return response()->json(['source' => $source, 'suggestions' => $suggestions]);
     }
 
     /** Create the operator-approved suggestions and immediately match the covered contacts. */
