@@ -20,7 +20,7 @@ class GroqIndustrySuggester
     // Groq's current large OSS model. Smaller/faster alternative: 'openai/gpt-oss-20b'.
     private const MODEL = 'openai/gpt-oss-120b';
     private const MAX_TEXTS = 150;
-    private const TIMEOUT_SECONDS = 20;
+    private const TIMEOUT_SECONDS = 60;
 
     public function available(): bool
     {
@@ -93,11 +93,13 @@ class GroqIndustrySuggester
                 ['role' => 'user', 'content' => $user],
             ],
             'temperature' => 0.2,
-            // GPT-OSS 120B burns many reasoning tokens before output; give it room.
-            'max_tokens' => 16384,
-            // Intentionally no response_format: Groq's json_object mode validates the whole
-            // completion as JSON, which fails whenever the model's reasoning or any trailing
-            // whitespace/comment slips through. We extract JSON ourselves below.
+            // GPT-OSS 120B spends a lot on internal reasoning; 8192 tops out reliably.
+            'max_tokens' => 8192,
+            // Minimise reasoning so completion fits in budget and arrives faster.
+            'reasoning_effort' => 'low',
+            // Intentionally no response_format: json_object mode validates the whole
+            // completion as JSON, which fails whenever the model's reasoning or any
+            // trailing whitespace slips through. We extract JSON ourselves below.
         ];
     }
 
