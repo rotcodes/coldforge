@@ -344,3 +344,22 @@ Total                 48 tests · 320 assertions · 8.6s
 - **Full body.** `bodyUrl` is a Google Cloud Storage signed URL (`storage.googleapis.com/hmail-webhook/eml/<id>.json`) returning `{plainText, html}`, expiring ~24h after receipt. `FetchInboxBodyJob` (3 tries, 30s/120s backoff) copies it into new `plain_body` / `html_body` / `body_fetched_at` columns. `html_body` is `$hidden` (UI renders plain text only). Attachment `fileUrl`s are probably the same kind of expiring link and are NOT downloaded yet.
 - **References fallback.** `findSend()` tries In-Reply-To, then References newest-first, exact match on `message_id` with or without angle brackets (replaces the old LIKE '%id%').
 - Tests: +5 in InboxWebhookTest (bearer, references, guard, body fetch ok/failed). 54 green.
+
+## [2026-10-21 11:00] Inbox: IMAP polling replaces the Agentic Mail webhook
+
+### Why
+- Live test: mail to `luke@digitelly.net` (an alias delivering into the `sameer@` mailbox) landed in the inbox, but Hostinger Agentic Mail (beta) never fired `message.received` for it. Outreach goes out from luke@, so replies go to luke@: the webhook would miss most real replies.
+- IMAP reads the whole mailbox, alias deliveries included, and gives full headers + body directly (no expiring bodyUrl).
+
+### What
+- `inbox:poll` command (scheduled every minute, `withoutOverlapping`) → `MailboxReader` (interface) → `ImapMailboxReader` (webklex/php-imap 6, pure PHP, EXAMINE + BODY.PEEK = strictly read-only) → `InboxIngestor`.
+- Cursor: `settings.imap_uidvalidity` + `settings.imap_last_uid`. First run (or UIDVALIDITY change) fetches the last `INBOX_IMAP_FIRST_RUN_DAYS` (7) days, then parks the cursor at UIDNEXT-1 so older history is never pulled. Dedup by `event_id` (`imap:<uidvalidity>:<uid>`) and Message-ID.
+- One bad message is logged and skipped, never blocks later ones. Connection errors → `settings.imap_last_error`, shown on the Inbox page with last-check time.
+- `InboxIngestor` keeps the reply logic: In-Reply-To → References newest-first, contact → `replied` (bounced/complained untouched), `campaigns.replied_count++`, `replied` event. HTML-only mail is converted to text.
+- Removed: `POST /webhooks/hmail/{secret}`, `FetchInboxBodyJob`, `HOSTINGER_MAIL_WEBHOOK_SECRET/TOKEN`, columns `delivery_id`, `html_preview`, `body_url`, `body_fetched_at` (migration `2026_10_21_000007`).
+- Config `coldforge.inbox_imap` ← `INBOX_IMAP_HOST` (imap.hostinger.com), `_PORT` (993), `_ENCRYPTION` (ssl), `_USERNAME`, `_PASSWORD`, `_FOLDER` (INBOX), `_FIRST_RUN_DAYS` (7).
+- Tests: `InboxPollTest` (11, fake MailboxReader). 51 green.
+
+### Operator
+- Delete the webhook in Hostinger → Agentic Mail → Webhooks (its URL now 404s; Hostinger would pause it anyway).
+- Only INBOX is polled. Replies that land in Spam are not picked up (set `INBOX_IMAP_FOLDER` or extend if this becomes a problem).

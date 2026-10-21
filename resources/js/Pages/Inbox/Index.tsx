@@ -1,18 +1,17 @@
 import { useState } from 'react';
 import { Link, router } from '@inertiajs/react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertCircle, Check, CheckCheck, Copy, ExternalLink, Inbox as InboxIcon, Mail, MailOpen, Paperclip, Sparkles, Unlink2 } from 'lucide-react';
+import { AlertCircle, Check, CheckCheck, Inbox as InboxIcon, Mail, MailOpen, Paperclip, Sparkles, Unlink2 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import PageHeader from '@/Components/PageHeader';
 import EmptyState from '@/Components/EmptyState';
 import Pagination from '@/Components/Pagination';
 import { Button } from '@/Components/ui/button';
 import { Card } from '@/Components/ui/card';
-import { toast } from 'sonner';
 import { cn, dateTime, fmt } from '@/lib/utils';
 import type { Paginated } from '@/types';
 
-type Attachment = { contentType: string; filename: string; sizeBytes: number; fileUrl: string };
+type Attachment = { contentType: string | null; filename: string | null; sizeBytes: number | null };
 type InboxMessage = {
     id: number;
     event_id: string;
@@ -25,10 +24,7 @@ type InboxMessage = {
     cc_addresses: string[] | null;
     subject: string | null;
     plain_preview: string | null;
-    html_preview: string | null;
     plain_body: string | null;
-    body_url: string | null;
-    body_fetched_at: string | null;
     attachments: Attachment[] | null;
     classification: string | null;
     is_read: boolean;
@@ -43,9 +39,7 @@ interface Props {
     messages: Paginated<InboxMessage>;
     filter: 'all' | 'unread' | 'replied-to-campaign' | 'orphan';
     selected: InboxMessage | null;
-    webhook_url: string;
-    webhook_configured: boolean;
-    token_configured: boolean;
+    imap: { configured: boolean; mailbox: string | null; last_polled_at: string | null; last_error: string | null };
     counts: { all: number; unread: number; campaign: number; orphan: number };
 }
 
@@ -56,7 +50,7 @@ const FILTERS: Array<{ key: Props['filter']; label: string; countKey: keyof Prop
     { key: 'orphan', label: 'Orphan', countKey: 'orphan' },
 ];
 
-export default function InboxIndex({ messages, filter, selected, webhook_url, webhook_configured, token_configured, counts }: Props) {
+export default function InboxIndex({ messages, filter, selected, imap, counts }: Props) {
     const [sel, setSel] = useState<InboxMessage | null>(selected);
 
     const open = (m: InboxMessage) => {
@@ -68,18 +62,13 @@ export default function InboxIndex({ messages, filter, selected, webhook_url, we
 
     const markAll = () => router.post('/inbox/mark-all-read', {}, { preserveScroll: true });
 
-    const copyUrl = async () => {
-        try { await navigator.clipboard.writeText(webhook_url); toast.success('Webhook URL copied'); }
-        catch { toast.error('Could not copy'); }
-    };
-
     const changeFilter = (f: Props['filter']) => router.get('/inbox', { filter: f }, { preserveState: false, preserveScroll: false });
 
-    if (!webhook_configured) {
+    if (!imap.configured) {
         return (
             <AppLayout title="Inbox">
                 <PageHeader title="Inbox" description="Replies from your campaigns land here." />
-                <SetupGuide webhook_url={webhook_url} configured={false} tokenConfigured={token_configured} onCopy={copyUrl} />
+                <MailboxStatus imap={imap} />
             </AppLayout>
         );
     }
@@ -173,8 +162,7 @@ export default function InboxIndex({ messages, filter, selected, webhook_url, we
                 </Card>
             </div>
 
-            {/* Webhook URL (collapsible footer so operator can re-copy if needed) */}
-            <SetupGuide webhook_url={webhook_url} configured tokenConfigured={token_configured} onCopy={copyUrl} />
+            <MailboxStatus imap={imap} />
         </AppLayout>
     );
 }
@@ -218,14 +206,6 @@ function MessageDetail({ m }: { m: InboxMessage }) {
                 ) : (
                     <div className="text-sm italic text-muted-foreground">No text body.</div>
                 )}
-                {!m.body_fetched_at && m.body_url && (
-                    <div className="mt-2 text-xs text-muted-foreground">
-                        Showing the 200-char webhook preview; the full body is fetched in the background.{' '}
-                        <a href={m.body_url} target="_blank" rel="noopener" className="inline-flex items-center gap-1 text-primary hover:underline">
-                            open raw <ExternalLink className="size-3" />
-                        </a>
-                    </div>
-                )}
             </div>
 
             {(m.attachments ?? []).length > 0 && (
@@ -236,8 +216,7 @@ function MessageDetail({ m }: { m: InboxMessage }) {
                             <li key={i} className="flex items-center gap-2 rounded border px-3 py-2 text-sm">
                                 <Paperclip className="size-3.5 text-muted-foreground" />
                                 <span className="min-w-0 flex-1 truncate">{a.filename}</span>
-                                <span className="font-mono text-[10px] text-muted-foreground">{Math.round(a.sizeBytes / 1024)} KB</span>
-                                <a href={a.fileUrl} target="_blank" rel="noopener" className="text-primary hover:underline">Download</a>
+                                {a.sizeBytes != null && <span className="font-mono text-[10px] text-muted-foreground">{Math.round(a.sizeBytes / 1024)} KB</span>}
                             </li>
                         ))}
                     </ul>
@@ -262,50 +241,30 @@ function MessageDetail({ m }: { m: InboxMessage }) {
     );
 }
 
-function SetupGuide({ webhook_url, configured, tokenConfigured, onCopy }: { webhook_url: string; configured: boolean; tokenConfigured: boolean; onCopy: () => void }) {
-    const [open, setOpen] = useState(!configured);
-    return (
-        <Card className={cn('mt-4 p-4', !configured && 'border-amber-500/30 bg-amber-500/5')}>
-            <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                className="flex w-full items-center gap-2 text-left text-sm font-medium"
-            >
-                {configured ? <Check className="size-4 text-emerald-500" /> : <AlertCircle className="size-4 text-amber-500" />}
-                <span>{configured ? 'Webhook setup' : 'Webhook not configured yet — set it up to start receiving replies'}</span>
-                <span className="ml-auto text-xs text-muted-foreground">{open ? 'Hide' : 'Show'}</span>
-            </button>
-            {open && (
-                <div className="mt-3 space-y-3">
-                    {configured ? (
-                        <>
-                            <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2 font-mono text-xs">
-                                <code className="min-w-0 flex-1 truncate">{webhook_url}</code>
-                                <Button size="sm" variant="outline" onClick={onCopy}><Copy className="size-3" /> Copy</Button>
-                            </div>
-                            <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
-                                <li>Hostinger hpanel → Emails → {`<your mailbox>`} → Agentic Mail → Webhooks → Add webhook</li>
-                                <li>Paste the URL above, event: <code className="rounded bg-background/50 px-1 font-mono text-xs">message.received</code></li>
-                                <li>Save. Replies will start appearing here within seconds.</li>
-                                <li>
-                                    Put the secret key Hostinger shows into <code className="rounded bg-background/50 px-1 font-mono text-xs">HOSTINGER_MAIL_WEBHOOK_TOKEN</code> in{' '}
-                                    <code className="rounded bg-background/50 px-1 font-mono text-xs">.env</code>, then <code className="font-mono text-xs">php artisan config:cache</code>.
-                                </li>
-                            </ol>
-                            <div className={cn('flex items-center gap-2 text-xs', tokenConfigured ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400')}>
-                                {tokenConfigured ? <Check className="size-3.5" /> : <AlertCircle className="size-3.5" />}
-                                {tokenConfigured ? 'Bearer token verification is on.' : 'Bearer token verification is off (path secret only).'}
-                            </div>
-                        </>
-                    ) : (
-                        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
-                            <p className="mb-2">Generate a secret and add to <code className="rounded bg-background/50 px-1 font-mono text-xs">.env</code>:</p>
-                            <pre className="overflow-x-auto rounded bg-background/60 p-2 font-mono text-xs">HOSTINGER_MAIL_WEBHOOK_SECRET={'<random 48-char hex>'}</pre>
-                            <p className="mt-2 text-xs">Then run <code className="font-mono">php artisan config:cache</code> and refresh.</p>
-                        </div>
-                    )}
+function MailboxStatus({ imap }: { imap: Props['imap'] }) {
+    if (!imap.configured) {
+        return (
+            <Card className="mt-4 border-amber-500/30 bg-amber-500/5 p-4">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                    <AlertCircle className="size-4 text-amber-500" /> Mailbox not connected yet. Add its IMAP login to start receiving replies.
                 </div>
-            )}
+                <pre className="mt-3 overflow-x-auto rounded bg-background/60 p-2 font-mono text-xs">{`INBOX_IMAP_USERNAME=you@yourdomain.com
+INBOX_IMAP_PASSWORD=<mailbox or app password>`}</pre>
+                <p className="mt-2 text-xs text-muted-foreground">
+                    Add these to <code className="font-mono">.env</code>, then run <code className="font-mono">php artisan config:cache</code>. The mailbox is checked every minute, read-only.
+                </p>
+            </Card>
+        );
+    }
+
+    return (
+        <Card className={cn('mt-4 flex flex-wrap items-center gap-2 p-3 text-xs', imap.last_error && 'border-red-500/30 bg-red-500/5')}>
+            {imap.last_error ? <AlertCircle className="size-3.5 text-red-500" /> : <Check className="size-3.5 text-emerald-500" />}
+            <span className="font-medium">{imap.mailbox}</span>
+            <span className="text-muted-foreground">
+                checked every minute over IMAP{imap.last_polled_at ? ` · last check ${dateTime(imap.last_polled_at)}` : ' · waiting for first check'}
+            </span>
+            {imap.last_error && <span className="w-full text-red-600 dark:text-red-400">Last check failed: {imap.last_error}</span>}
         </Card>
     );
 }

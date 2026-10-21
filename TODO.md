@@ -19,7 +19,7 @@
 - [x] README with deploy steps, NOTES.md
 
 ## Pending / nice to have
-- [ ] Brevo webhook endpoint (bounces, spam complaints, so contacts get `bounced` / `complained` automatically)
+- [x] Brevo webhook endpoint (bounces, spam complaints, so contacts get `bounced` / `complained` automatically)
 - [ ] Native API drivers for MailerSend, Elastic Email, Mailjet (they connect over SMTP with prefilled hosts today)
 - [ ] Bulk actions on contacts (tag / delete / export selected)
 - [ ] CSV export of contacts and campaign results
@@ -29,5 +29,5 @@
 
 ## Phase 2 (out of scope for now)
 - [ ] Follow-up / drip sequences (stop on reply)
-- [ ] Reply detection via IMAP
+- [x] Reply detection via IMAP (`inbox:poll`, every minute)
 - [ ] A/B subject tests

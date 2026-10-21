@@ -18,12 +18,17 @@ return [
     // `php artisan tinker --execute="echo bin2hex(random_bytes(24));"`
     'brevo_webhook_secret' => env('BREVO_WEBHOOK_SECRET'),
 
-    // Same path-secret pattern for Hostinger Agentic Mail's message.received webhook.
-    'hostinger_mail_webhook_secret' => env('HOSTINGER_MAIL_WEBHOOK_SECRET'),
-
-    // The "Secret key" Hostinger shows once when the webhook is created. Hostinger sends it
-    // as `Authorization: Bearer <secret>` on every delivery; when set, requests without it get 401.
-    'hostinger_mail_webhook_token' => env('HOSTINGER_MAIL_WEBHOOK_TOKEN'),
+    // Reply mailbox polled every minute by `inbox:poll` (read-only). Polling the mailbox
+    // instead of a provider webhook also catches mail sent to its aliases.
+    'inbox_imap' => [
+        'host' => env('INBOX_IMAP_HOST', 'imap.hostinger.com'),
+        'port' => (int) env('INBOX_IMAP_PORT', 993),
+        'encryption' => env('INBOX_IMAP_ENCRYPTION', 'ssl'),
+        'username' => env('INBOX_IMAP_USERNAME'),
+        'password' => env('INBOX_IMAP_PASSWORD'),
+        'folder' => env('INBOX_IMAP_FOLDER', 'INBOX'),
+        'first_run_days' => (int) env('INBOX_IMAP_FIRST_RUN_DAYS', 7),
+    ],
 
     // Default industries seeded on first run. Editable later from the Industries page.
     'default_industries' => [

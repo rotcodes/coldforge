@@ -10,11 +10,10 @@ class InboxMessage extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'provider', 'event_id', 'delivery_id', 'mailbox_address',
+        'provider', 'event_id', 'mailbox_address',
         'message_id', 'in_reply_to', 'references',
         'from_email', 'from_name', 'to_addresses', 'cc_addresses',
-        'subject', 'plain_preview', 'html_preview', 'plain_body', 'html_body',
-        'body_url', 'body_fetched_at', 'attachments',
+        'subject', 'plain_preview', 'plain_body', 'html_body', 'attachments',
         'campaign_send_id', 'contact_id', 'classification', 'is_read',
         'received_at', 'created_at',
     ];
@@ -30,7 +29,6 @@ class InboxMessage extends Model
             'cc_addresses' => 'array',
             'attachments' => 'array',
             'is_read' => 'boolean',
-            'body_fetched_at' => 'datetime',
             'received_at' => 'datetime',
             'created_at' => 'datetime',
         ];
