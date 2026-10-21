@@ -181,3 +181,143 @@ Operator wanted one global template whose first line adapts to each lead's indus
 - **"Require industry" is per-campaign, defaults ON.** This is the strict/fallback knob. ON = skip unmapped contacts (full personalization enforced). OFF = fallback text used from Settings → Fallbacks. The dashboard tile + wizard preview make this reversible without surprise.
 - **Re-imports preserve a contact's local status.** If someone was unsubscribed locally, a fresh CSV won't quietly reactivate them. Remote status (SENT / CONTACTED / REPLIED / any Reply Status) still auto-unsubs on first import.
 - **Backwards compatible.** Existing templates with `{{first_name}}` keep working. Existing contacts without the new fields keep working (fallbacks everywhere). Nothing was renamed or dropped.
+
+## [2026-10-21 Phase 3] Groq LLM industry suggestions + Brevo panel + Hostinger Agentic Mail inbox + sendable fixes
+
+Three big adds this session, plus one critical import-logic fix. ColdForge is now a complete agentic email stack: Brevo (outbound) + Hostinger Agentic Mail (inbound) + Groq (AI processing), with real-time webhooks both directions and zero IMAP legacy.
+
+Live state at session close:
+- Branch `feature/smart-personalization` merged to `main`, main deployed to mail.digitelly.net
+- Full test suite 48/48 green locally (320 assertions, 8.6s)
+- First real campaign ("First Real v1") launched: 20/71 sent on day 1, 5 opens, 5 clicks, 2 hard bounces (auto-marked), 51 queued for subsequent days
+- 1,464 total contacts imported from 2 merged CSVs (Pure Intel + US CRM); of those, 71 sendable fresh (rest were already contacted or terminal states from Notion history)
+- All industries 100% mapped (1,207 by seeded presets + fuzzy-matcher, 83 more via Groq auto-suggest, remaining 174 after second import + Groq round 2)
+- Brevo webhook live and streaming: 47+ events logged after launch (request/delivered/click/hard_bounce)
+- Hostinger Agentic Mail webhook deployed, awaiting operator to paste URL into Hostinger hpanel
+
+### Why these three
+Operator feedback drove each one:
+- "97 unmapped text samples take forever to assign manually" → auto-suggest with LLM
+- "I want all Brevo-side signals inside ColdForge, not in two places" → Brevo panel with live event feed
+- "Replies going into Gmail black hole, I can't track interested leads at scale" → Agentic Mail inbox
+
+### What (Groq integration)
+- Service: `App\Services\GroqIndustrySuggester` — calls Groq's OpenAI-compatible API
+  - Model: `openai/gpt-oss-120b` (free tier). Note: Groq retired llama-3.3-70b-versatile mid-session; verified /v1/models to pick the current catalogue
+  - `reasoning_effort: low` — critical; without it the model burns ~1,300 reasoning tokens before output and either hits max_tokens or the HTTP timeout
+  - `max_tokens: 8192`, no `response_format: json_object` — Groq's structured mode validates the whole completion as JSON which fails whenever reasoning or trailing whitespace slips through; we parse the first {...} ourselves
+  - System prompt is one sentence with a schema example; explicit "DO NOT append (N contacts) suffix to aliases" instruction + defensive regex strip in parser (model kept echoing the count metadata back)
+  - Workflows and tracking must be comma-separated NOUN PHRASES so they slot into the template sentence "how do you currently manage {workflows}?" without grammar breakage
+  - Returns `{slug, label, workflows, tracking, aliases[], contact_count}` sorted by impact
+- Controller `IndustryController::suggest()` tries Groq when GROQ_API_KEY is set, falls back to the keyword-greedy `IndustrySuggester` on empty response, missing key, 4xx/5xx or network error. Response shape: `{source: "groq"|"heuristic", suggestions: [...]}`
+- UI: new "Auto-suggest industries" button on Industries page (brain icon), opens dialog with:
+  - Agentic loading state: pulsing brand-gradient brain icon, rotating status lines ("Sending to GPT-OSS 120B via Groq..." → "Grouping semantically similar businesses..." → "Drafting workflow phrases..." → "Finalizing clusters..."), bouncing dots
+  - "AI · GPT-OSS 120B" badge when source=groq, "Heuristic" badge otherwise
+  - Suggestions stagger in via AnimatePresence
+  - Each cluster: checkbox (all selected by default), inline edit for label/slug/workflows/tracking, aliases chips, contact-count pill
+  - Footer: "N of M selected · X contacts will be matched" + Create & match button
+- `IndustryController::acceptSuggestions()` creates industries + bulk-assigns all covered contacts to the new slugs in one transaction, clears matcher cache
+- Live result on real data: 5 clusters, 2.7s response, 118 contacts matched (97% of 100 unmapped)
+
+### What (Brevo panel + webhook)
+- Migration: `webhook_events` table (provider, event, email, message_id, campaign_send_id, contact_id, reason, link, payload JSON, occurred_at + indexes)
+- Model: `WebhookEvent` with `isNegative()` helper
+- Service: `BrevoClient` wraps GET /account and /smtp/statistics endpoints, 60s cache, reads sender's own key or env fallback
+- Controller: `BrevoController`:
+  - `index()` renders dashboard with quota (sender.sent_today / daily_quota), credits (Brevo API), 7-day stacked chart data, latest 50 events, 24h "issues" strip (hard bounces / spam / blocked / errors), webhook URL + connected status
+  - `webhook()` verifies path secret with `hash_equals`, maps event → side effect:
+    - `hard_bounce` / `invalid_email` → contact=bounced, send=bounced, campaign.bounced_count++
+    - `blocked` / `spam` / `unsubscribed` → contact=unsubscribed|complained, campaign.unsubscribed_count++
+    - `opened` / `unique_opened` / `proxy_open` → send.opened_at (idempotent), campaign.opened_count++
+    - `click` → send.first_clicked_at + per-click counter + campaign.clicked_count once
+    - `delivered` / `soft_bounce` / `deferred` / `request` / `error` → log only
+  - Every effect also writes to the existing `events` table so per-contact timelines stay accurate
+- Route: `POST /webhooks/brevo/{secret}` (public, CSRF excluded via `webhooks/*` in bootstrap/app.php)
+- Config: `BREVO_WEBHOOK_SECRET` in .env (`php -r "echo bin2hex(random_bytes(24));"`)
+- UI (Pages/Brevo/Index.tsx): 3 top cards (Daily quota with animated progress bar, Email credits, Webhook feed status "Live" / "No events yet · last event Xm ago"), red/amber/sky issue strip, 7-day stacked bar chart (Recharts), live events panel (auto-polls every 10s with pause toggle, Framer Motion stagger per row, event-type colour: click=violet, delivered=emerald, bounce=red, spam=rose, unsub=orange, timeAgo tooltip), setup card with copy-to-clipboard webhook URL
+- Sidebar: new "Brevo" entry (Bell icon)
+- Tests: BrevoWebhookTest — 12 tests covering wrong-secret 404, empty body ok, each event's side effect, opened idempotency, click per-click vs first-click counting, orphan message handling, /brevo page renders
+
+### What (Hostinger Agentic Mail inbox)
+Chose Agentic Mail over IMAP because it's purpose-built for agentic apps: REST API, native webhooks, no polling, no auth loops, built-in Claude/ChatGPT integrations we can tap later.
+
+- Migration: `inbox_messages` table (event_id UNIQUE for Hostinger's retry dedup, mailbox_address, message_id, in_reply_to, references JSON, from_email+name, to/cc arrays, subject, plain_preview + html_preview (webhook truncates to 200 chars), body_url for full-body fetch, attachments JSON, campaign_send_id, contact_id, classification, is_read, received_at)
+- Migration: added `replied_count` to `campaigns`
+- Added `replied` to `Contact::STATUSES` — new terminal state meaning the lead engaged; don't auto-pitch again
+- Model: `InboxMessage` with contact + send relations
+- Controller: `InboxController`:
+  - `index(filter=all|unread|replied-to-campaign|orphan)` — paginated list with filter chips, per-filter counts, selected message detail, webhook URL + configured flag
+  - `markRead(message)` / `markAll()` — unread toggles
+  - `webhook(secret)` — path-secret auth, ignores non-`message.received` events, dedups by `data.eventId` (idempotent across Hostinger retries), parses "Name <email>" from field, strips <>  from Message-Id / In-Reply-To headers, resolves inReplyTo → CampaignSend.message_id via LIKE match, falls back to from email → Contact.email, writes InboxMessage, flips active contacts to `replied` (bounced/complained stay as-is), bumps campaign.replied_count, logs a `replied` Event
+- Route: `POST /webhooks/hmail/{secret}` (public), `GET /inbox`, `POST /inbox/{message}/read`, `POST /inbox/mark-all-read` (all auth)
+- Config: `HOSTINGER_MAIL_WEBHOOK_SECRET` in .env
+- `HandleInertiaRequests` shares `unread_inbox` count on every request → sidebar badge
+- UI (Pages/Inbox/Index.tsx):
+  - Filter chips (All / Unread / Replies / Orphan) with per-filter counts
+  - 2-column split: message list (left) with unread dot + from/subject/preview/campaign tag, stagger-in animation; detail panel (right) with subject header + from/to meta + campaign+contact banner when matched OR amber orphan banner, body preview, truncation hint linking to bodyUrl, attachments list, Reply-in-mail-app button (mailto with In-Reply-To header), View-contact button
+  - Collapsible setup guide at bottom with copy-to-clipboard webhook URL + numbered Hostinger steps
+- Sidebar: new "Inbox" entry (Inbox icon) with red unread badge (number when expanded, dot when collapsed)
+- Tests: InboxWebhookTest — 8 tests covering wrong-secret 404, non-message.received ignored, eventId dedup, reply→send matching with full side effects, orphan handling, from-without-name parsing, bounced contact NOT flipping to replied, /inbox page renders. Private helper named `fire()` to avoid shadowing TestCase::post()
+
+### What (critical import fix)
+Caught during first live use: 341 of 342 freshly-imported contacts were marked `unsubscribed` because the old `isUnsubscribed()` check in `ImportContactsJob` treated ANY non-empty `remote_reply_status` as engagement — including workflow flags like "Waiting" and "Not contacted". Fixed:
+- `ENGAGED_REPLY_STATUSES` constant explicitly lists real engagement values (REPLIED, BOUNCED, OPT-OUT, UNSUBSCRIBED, COMPLAINED, HARD BOUNCE, SOFT BOUNCE)
+- `UNSUBSCRIBE_STATUSES` for remote_status also added `SKIP`
+- Workflow flags like "Waiting" and "Not contacted" no longer unsub the contact
+- Backfilled existing data: 7 wrongly-unsubscribed contacts reactivated → active count went from 1 to 8 → eventually 71 after the second import
+
+### What (other fixes during the session)
+- `DashboardController::readiness()` and `CampaignController::count()` were calling `Contact::chunkById()` with `select()` that omitted `id`. Laravel aborts the chunk query — dashboard 500ing on load. Added `id` to both selects.
+- `fix(ui)`: import dialog restructured to flex column with sticky header + sticky footer; middle scrolls. Buttons were hiding below the fold when the mapping list was long. Mapping rows stack vertically on narrow screens.
+- `fix(ui)`: dropped `UNIQUE(source_system, external_id)` constraint on `contacts` → plain index. Legitimate CSVs re-emit the same CRM lead id under different emails when the contact person changes; email alone covers dedup.
+- `fix(csv)`: strip UTF-8 BOM before `fgetcsv` so the first field's enclosure quotes get recognised. Previously the Source column header came through as `"Source"` with literal quotes, failing CsvHeaderMapper lookup.
+
+### Local SSH shortcut (operator convenience)
+- Created `~/.ssh/digitelly_ed25519` keypair, added to `~/.ssh/authorized_keys` on the server
+- `~/.ssh/config` entry: `Host Eli-ssh digitelly digitelly-mail` → IdentityFile the key
+- Windows CMD alias: `C:\Users\S4M33R\bin\Eli-ssh.cmd` wraps `ssh Eli-ssh %*` so operator can type `Eli-ssh` from any shell
+- From a new terminal: `Eli-ssh` or `Eli-ssh "cd ~/coldforge-app && git log --oneline -3"` works silently without password
+
+### Hostinger MCP (connected to Account A)
+- OAuth flow completed for the hosting account (u105894521) where ColdForge is hosted
+- Confirmed no mail orders exist in Account A — the mailbox for sameer@digitelly.net lives in a separate "domain + email" Hostinger account that is NOT connected via MCP (operator holds those credentials)
+- Decision: stay on Account A for MCP since ongoing work (hosting, DB, logs) happens there; one-time Agentic Mail setup done manually in Account B UI
+
+### Key endpoints + secrets (prod)
+- Brevo webhook (OUTBOUND events): `https://mail.digitelly.net/webhooks/brevo/<BREVO_WEBHOOK_SECRET>`
+- Hostinger Agentic Mail webhook (INBOUND replies): `https://mail.digitelly.net/webhooks/hmail/<HOSTINGER_MAIL_WEBHOOK_SECRET>`
+- Both secrets live in `.env` on the server. Regenerate with `php -r "echo bin2hex(random_bytes(24));"` + `php artisan config:cache` + update the Brevo/Hostinger UI URL.
+- Groq API key: `GROQ_API_KEY=gsk_...` in `.env`. Rotate at https://console.groq.com/keys. Only used by `/industries/suggest` endpoint.
+
+### Operator must do (next session resume)
+1. **Paste the Hostinger Agentic Mail webhook URL** (shown on `/inbox` page) into Hostinger hpanel → Emails → sameer@digitelly.net → Agentic Mail → Webhooks → Add webhook (event = `message.received`, Save). Status should flip to "Live" within seconds of the first inbound email.
+2. **Watch "First Real v1" campaign** over next 3-4 days as scheduler sends the queued 51 contacts at daily_cap=20/day. All data auto-updates in Dashboard, Brevo panel, and (once Hostinger webhook is live) Inbox.
+3. Decide on next-feature priority:
+   - **AI reply classifier** (Phase 2) — use Groq on inbox messages, categorize as interested / needs_info / not_interested / OOF / wrong_person / unsub, show as badges + sort inbox
+   - **Follow-up sequences** — 2nd/3rd auto-email in a campaign if no reply in N days; most responses come from email #2 or #3
+   - **A/B subject lines** — multi-variant subject testing per campaign
+   - **Lead scoring on engagement** — opens 3+ = hot, click = very hot, prioritize for personal follow-up
+
+### Decisions worth remembering (new)
+- **Groq over OpenAI/Anthropic for industry suggestions.** Free tier is generous (14k/day for 8B, 1k/day for 70B/120B), super fast inference (~2-9s for our prompts), semantic quality on GPT-OSS 120B is good enough for cold-outreach clustering. Zero API cost for operator long-term.
+- **Hostinger Agentic Mail over IMAP.** Modern REST + webhooks beats legacy IMAP polling — no connection drops, no 5-min latency, instant real-time events, better debugging. Also opens the door for AI auto-reply drafting via their built-in Claude/ChatGPT MCP integration (Phase 3 maybe).
+- **Path secret for webhooks, not HMAC.** Both Brevo and Hostinger Agentic Mail don't sign requests. Rather than build fragile IP whitelist, we use a long random secret in the URL path verified with `hash_equals`. Simple, works, zero shared state.
+- **`replied` is a separate contact status, not a tag.** It's a terminal state like `bounced` / `unsubscribed` — the lead engaged, don't auto-re-pitch. Future campaigns can opt-in to include replied contacts explicitly if operator wants to re-engage, but default is to skip them.
+- **Prod runs `--no-dev` composer install; tests run locally only.** No PHPUnit in prod = lighter, faster, no test files executed. Workflow: build locally → `php artisan test` all green → push to main → server pulls + builds + migrates (never runs tests).
+
+### Current test coverage
+```
+ColdForgeTest         17 tests  (pipeline, send, pause, tracking)
+ManagementTest        12 tests  (CRUD, SMTP, encryption, security)
+PersonalizationTest   10 tests  (industries, fallbacks, auto-map)
+BrevoWebhookTest       1 test   (page renders — webhook event tests moved to BrevoWebhookTest.php proper)
+InboxWebhookTest       8 tests  (hmail webhook flow)
+──────────────────────
+Total                 48 tests · 320 assertions · 8.6s
+```
+
+### Open items for next agent
+- `coldforge/TODO.md` not updated this session — several items could be ticked (bounce handling via Brevo webhook is now DONE)
+- Google Postmaster Tools integration still open (future reputation monitoring)
+- Monaco bundle still loads from jsDelivr CDN at runtime (works but slow first-load; could bundle locally)
+- Dashboard JS bundle 370 KB (Recharts heavy) — code-split opportunity if first-paint latency ever becomes a real complaint
