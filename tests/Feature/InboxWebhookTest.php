@@ -10,6 +10,8 @@ use App\Models\Sender;
 use App\Models\Template;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
+use RuntimeException;
 use Tests\TestCase;
 
 class InboxWebhookTest extends TestCase
@@ -108,6 +110,63 @@ class InboxWebhookTest extends TestCase
         $this->assertSame($subject, $msg->subject);
     }
 
+    public function test_bearer_token_required_when_configured(): void
+    {
+        config(['coldforge.hostinger_mail_webhook_token' => 'hm-token']);
+
+        $this->fire($this->payload(['eventId' => 'tok-0']))->assertStatus(401);
+        $this->fire($this->payload(['eventId' => 'tok-1']), 'wrong')->assertStatus(401);
+        $this->assertSame(0, InboxMessage::count());
+
+        $this->fire($this->payload(['eventId' => 'tok-2']), 'hm-token')->assertOk();
+        $this->assertSame(1, InboxMessage::count());
+    }
+
+    public function test_matches_via_references_when_in_reply_to_is_unknown(): void
+    {
+        [$campaign, $send] = $this->makeSendWith('carol@example.com', '<orig-2@smtp-relay.mailin.fr>');
+
+        $this->fire($this->payload([
+            'eventId' => 'ref-1',
+            'from' => 'Someone Else <assistant@example.com>',
+            'inReplyTo' => '<mangled@client>',
+            'references' => ['<older@thread>', '<orig-2@smtp-relay.mailin.fr>'],
+        ]))->assertOk();
+
+        $this->assertSame($send->id, InboxMessage::first()->campaign_send_id);
+        $this->assertSame(1, $campaign->fresh()->replied_count);
+    }
+
+    public function test_internal_error_is_logged_and_answered_200(): void
+    {
+        InboxMessage::creating(fn () => throw new RuntimeException('db down'));
+
+        $this->fire($this->payload(['eventId' => 'boom']))->assertOk()->assertSee('logged');
+    }
+
+    public function test_full_body_is_fetched_from_body_url(): void
+    {
+        Http::fake(['storage.googleapis.com/*' => Http::response(['plainText' => 'Full reply text', 'html' => '<p>Full reply text</p>'])]);
+
+        $this->fire($this->payload(['eventId' => 'body-1', 'bodyUrl' => 'https://storage.googleapis.com/hmail-webhook/eml/x.json?Signature=s']))->assertOk();
+
+        $msg = InboxMessage::first();
+        $this->assertSame('Full reply text', $msg->plain_body);
+        $this->assertSame('<p>Full reply text</p>', $msg->html_body);
+        $this->assertNotNull($msg->body_fetched_at);
+    }
+
+    public function test_failed_body_fetch_keeps_message_and_side_effects(): void
+    {
+        Http::fake(['storage.googleapis.com/*' => Http::response('expired', 403)]);
+        $contact = Contact::create(['email' => 'dave@example.com', 'status' => 'active']);
+
+        $this->fire($this->payload(['eventId' => 'body-2', 'from' => 'dave@example.com', 'bodyUrl' => 'https://storage.googleapis.com/hmail-webhook/eml/y.json']))->assertOk();
+
+        $this->assertNull(InboxMessage::first()->plain_body);
+        $this->assertSame('replied', $contact->fresh()->status);
+    }
+
     public function test_inbox_page_renders(): void
     {
         $user = User::create(['name' => 'Admin', 'email' => 'admin@test.dev', 'password' => 'secret-password']);
@@ -117,9 +176,11 @@ class InboxWebhookTest extends TestCase
 
     // --- helpers --------------------------------------------------------
 
-    private function fire(?array $payload = null)
+    private function fire(?array $payload = null, ?string $bearer = null)
     {
-        return $this->postJson("/webhooks/hmail/{$this->secret}", $payload ?? $this->payload([]));
+        $headers = $bearer ? ['Authorization' => "Bearer {$bearer}"] : [];
+
+        return $this->postJson("/webhooks/hmail/{$this->secret}", $payload ?? $this->payload([]), $headers);
     }
 
     private function payload(array $overrides): array

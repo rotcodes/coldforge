@@ -26,7 +26,9 @@ type InboxMessage = {
     subject: string | null;
     plain_preview: string | null;
     html_preview: string | null;
+    plain_body: string | null;
     body_url: string | null;
+    body_fetched_at: string | null;
     attachments: Attachment[] | null;
     classification: string | null;
     is_read: boolean;
@@ -43,6 +45,7 @@ interface Props {
     selected: InboxMessage | null;
     webhook_url: string;
     webhook_configured: boolean;
+    token_configured: boolean;
     counts: { all: number; unread: number; campaign: number; orphan: number };
 }
 
@@ -53,7 +56,7 @@ const FILTERS: Array<{ key: Props['filter']; label: string; countKey: keyof Prop
     { key: 'orphan', label: 'Orphan', countKey: 'orphan' },
 ];
 
-export default function InboxIndex({ messages, filter, selected, webhook_url, webhook_configured, counts }: Props) {
+export default function InboxIndex({ messages, filter, selected, webhook_url, webhook_configured, token_configured, counts }: Props) {
     const [sel, setSel] = useState<InboxMessage | null>(selected);
 
     const open = (m: InboxMessage) => {
@@ -76,7 +79,7 @@ export default function InboxIndex({ messages, filter, selected, webhook_url, we
         return (
             <AppLayout title="Inbox">
                 <PageHeader title="Inbox" description="Replies from your campaigns land here." />
-                <SetupGuide webhook_url={webhook_url} configured={false} onCopy={copyUrl} />
+                <SetupGuide webhook_url={webhook_url} configured={false} tokenConfigured={token_configured} onCopy={copyUrl} />
             </AppLayout>
         );
     }
@@ -171,12 +174,13 @@ export default function InboxIndex({ messages, filter, selected, webhook_url, we
             </div>
 
             {/* Webhook URL (collapsible footer so operator can re-copy if needed) */}
-            <SetupGuide webhook_url={webhook_url} configured onCopy={copyUrl} />
+            <SetupGuide webhook_url={webhook_url} configured tokenConfigured={token_configured} onCopy={copyUrl} />
         </AppLayout>
     );
 }
 
 function MessageDetail({ m }: { m: InboxMessage }) {
+    const body = m.plain_body ?? m.plain_preview;
     return (
         <div className="p-5">
             <div className="mb-3">
@@ -209,19 +213,17 @@ function MessageDetail({ m }: { m: InboxMessage }) {
             )}
 
             <div className="rounded-lg border bg-muted/20 p-4">
-                {m.plain_preview ? (
-                    <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{m.plain_preview}</pre>
+                {body ? (
+                    <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">{body}</pre>
                 ) : (
-                    <div className="text-sm italic text-muted-foreground">No preview text in webhook. Full body available at bodyUrl.</div>
+                    <div className="text-sm italic text-muted-foreground">No text body.</div>
                 )}
-                {m.plain_preview && m.plain_preview.length >= 190 && (
+                {!m.body_fetched_at && m.body_url && (
                     <div className="mt-2 text-xs text-muted-foreground">
-                        Preview truncated to 200 chars by Hostinger webhook.
-                        {m.body_url && <> Full body:{' '}
-                            <a href={m.body_url} target="_blank" rel="noopener" className="inline-flex items-center gap-1 text-primary hover:underline">
-                                open <ExternalLink className="size-3" />
-                            </a>
-                        </>}
+                        Showing the 200-char webhook preview; the full body is fetched in the background.{' '}
+                        <a href={m.body_url} target="_blank" rel="noopener" className="inline-flex items-center gap-1 text-primary hover:underline">
+                            open raw <ExternalLink className="size-3" />
+                        </a>
                     </div>
                 )}
             </div>
@@ -260,7 +262,7 @@ function MessageDetail({ m }: { m: InboxMessage }) {
     );
 }
 
-function SetupGuide({ webhook_url, configured, onCopy }: { webhook_url: string; configured: boolean; onCopy: () => void }) {
+function SetupGuide({ webhook_url, configured, tokenConfigured, onCopy }: { webhook_url: string; configured: boolean; tokenConfigured: boolean; onCopy: () => void }) {
     const [open, setOpen] = useState(!configured);
     return (
         <Card className={cn('mt-4 p-4', !configured && 'border-amber-500/30 bg-amber-500/5')}>
@@ -285,7 +287,15 @@ function SetupGuide({ webhook_url, configured, onCopy }: { webhook_url: string; 
                                 <li>Hostinger hpanel → Emails → {`<your mailbox>`} → Agentic Mail → Webhooks → Add webhook</li>
                                 <li>Paste the URL above, event: <code className="rounded bg-background/50 px-1 font-mono text-xs">message.received</code></li>
                                 <li>Save. Replies will start appearing here within seconds.</li>
+                                <li>
+                                    Put the secret key Hostinger shows into <code className="rounded bg-background/50 px-1 font-mono text-xs">HOSTINGER_MAIL_WEBHOOK_TOKEN</code> in{' '}
+                                    <code className="rounded bg-background/50 px-1 font-mono text-xs">.env</code>, then <code className="font-mono text-xs">php artisan config:cache</code>.
+                                </li>
                             </ol>
+                            <div className={cn('flex items-center gap-2 text-xs', tokenConfigured ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400')}>
+                                {tokenConfigured ? <Check className="size-3.5" /> : <AlertCircle className="size-3.5" />}
+                                {tokenConfigured ? 'Bearer token verification is on.' : 'Bearer token verification is off (path secret only).'}
+                            </div>
                         </>
                     ) : (
                         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">

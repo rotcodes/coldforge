@@ -335,3 +335,12 @@ Total                 48 tests · 320 assertions · 8.6s
 
 ### Note
 - Hostinger Agentic Mail DOES sign webhooks (secret key shown once when the webhook is created). We still auth by path secret only; adding signature verification is a possible hardening step.
+
+## [2026-10-21 10:40] Agentic Mail webhook hardening (per Hostinger docs)
+
+### What
+- **Bearer check.** Hostinger docs: the webhook's secret "is sent as a bearer token with every delivery". New `HOSTINGER_MAIL_WEBHOOK_TOKEN` (config `coldforge.hostinger_mail_webhook_token`); when set, requests without `Authorization: Bearer <token>` get 401. Path secret stays as the first layer. Inbox setup card shows whether token verification is on.
+- **Never-500 guard.** Hostinger makes at most 5 delivery attempts and auto-pauses webhooks that keep failing (the Brevo test email was lost this way during the body_url bug). After auth, `receive()` runs in try/catch: failures are logged with the full payload (`hmail webhook failed`) and answered 200. VARCHAR(255) fields are clamped with `fit()`, timestamp parse falls back to now().
+- **Full body.** `bodyUrl` is a Google Cloud Storage signed URL (`storage.googleapis.com/hmail-webhook/eml/<id>.json`) returning `{plainText, html}`, expiring ~24h after receipt. `FetchInboxBodyJob` (3 tries, 30s/120s backoff) copies it into new `plain_body` / `html_body` / `body_fetched_at` columns. `html_body` is `$hidden` (UI renders plain text only). Attachment `fileUrl`s are probably the same kind of expiring link and are NOT downloaded yet.
+- **References fallback.** `findSend()` tries In-Reply-To, then References newest-first, exact match on `message_id` with or without angle brackets (replaces the old LIKE '%id%').
+- Tests: +5 in InboxWebhookTest (bearer, references, guard, body fetch ok/failed). 54 green.
