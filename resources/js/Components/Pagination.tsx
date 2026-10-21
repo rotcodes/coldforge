@@ -11,14 +11,14 @@ export default function Pagination({ page }: { page: Paginated<unknown> }) {
             <span className="font-mono">
                 {fmt(page.from ?? 0)}–{fmt(page.to ?? 0)} of {fmt(page.total)}
             </span>
-            <div className="flex gap-2">
+            <div className="flex shrink-0 gap-2 whitespace-nowrap">
                 <Button variant="outline" size="sm" disabled={!page.prev_page_url} asChild={!!page.prev_page_url}>
                     {page.prev_page_url ? (
                         <Link href={page.prev_page_url} preserveScroll>
                             <ChevronLeft /> Prev
                         </Link>
                     ) : (
-                        <span>
+                        <span className="inline-flex items-center gap-1">
                             <ChevronLeft /> Prev
                         </span>
                     )}
@@ -29,7 +29,7 @@ export default function Pagination({ page }: { page: Paginated<unknown> }) {
                             Next <ChevronRight />
                         </Link>
                     ) : (
-                        <span>
+                        <span className="inline-flex items-center gap-1">
                             Next <ChevronRight />
                         </span>
                     )}

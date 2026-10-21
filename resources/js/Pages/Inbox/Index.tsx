@@ -99,13 +99,14 @@ export default function InboxIndex({ messages, filter, selected, imap, counts }:
                 ))}
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-5">
+            {/* Fixed-height split on desktop: list and detail scroll on their own, the page doesn't grow. */}
+            <div className="grid gap-4 lg:h-[calc(100dvh-17rem)] lg:min-h-[28rem] lg:grid-cols-5">
                 {/* Message list */}
-                <Card className="overflow-hidden p-0 lg:col-span-2">
+                <Card className="flex max-h-[70dvh] flex-col overflow-hidden p-0 lg:col-span-2 lg:max-h-none">
                     {messages.data.length === 0 ? (
                         <EmptyState icon={InboxIcon} title="No messages" text={filter === 'unread' ? "You're all caught up!" : 'Nothing here yet. Replies will appear within seconds of landing in your mailbox.'} />
                     ) : (
-                        <ul className="divide-y">
+                        <ul className="min-h-0 flex-1 divide-y overflow-y-auto overscroll-contain">
                             <AnimatePresence initial={false}>
                                 {messages.data.map((m) => (
                                     <motion.li
@@ -148,11 +149,13 @@ export default function InboxIndex({ messages, filter, selected, imap, counts }:
                             </AnimatePresence>
                         </ul>
                     )}
-                    <Pagination page={messages} />
+                    <div className="shrink-0">
+                        <Pagination page={messages} />
+                    </div>
                 </Card>
 
                 {/* Detail */}
-                <Card className="lg:col-span-3">
+                <Card className="min-h-0 overflow-y-auto overscroll-contain lg:col-span-3">
                     {sel ? <MessageDetail m={sel} /> : (
                         <div className="flex h-full min-h-80 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
                             <Mail className="size-10 opacity-30" />

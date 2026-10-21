@@ -71,6 +71,37 @@
         font-feature-settings: 'cv11', 'ss01';
     }
 
+    /* Themed scrollbars everywhere: slim brand-gradient thumb on a transparent track.
+       Chrome/Safari/Edge use the ::-webkit pseudo-elements; Firefox only supports the
+       standard properties (setting those in Chrome would disable the gradient thumb). */
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+
+    ::-webkit-scrollbar-track,
+    ::-webkit-scrollbar-corner {
+        background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        border: 3px solid transparent;
+        border-radius: 9999px;
+        background: linear-gradient(180deg, hsl(239 84% 67% / 0.45), hsl(271 91% 65% / 0.45)) padding-box;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        border-width: 2px;
+        background: linear-gradient(180deg, #6366f1, #a855f7) padding-box;
+    }
+
+    @supports (-moz-appearance: none) {
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: hsl(var(--primary) / 0.5) transparent;
+        }
+    }
+
     /* Recharts focuses its SVG on click and draws an outline box; not wanted. */
     .recharts-wrapper,
     .recharts-wrapper *,
