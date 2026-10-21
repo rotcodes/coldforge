@@ -107,6 +107,8 @@ class PersonalizationTest extends TestCase
 
     public function test_matching_filter_honours_industry_source_and_score(): void
     {
+        // Start from a clean contact set so the sample_contacts.csv seed doesn't skew counts.
+        Contact::query()->delete();
         Contact::create(['email' => 'a@b.co', 'industry_slug' => 'equipment_dealer', 'source_system' => 'INTEL', 'lead_score' => 90]);
         Contact::create(['email' => 'c@d.co', 'industry_slug' => 'warehouse', 'source_system' => 'CRM', 'lead_score' => 60]);
         Contact::create(['email' => 'e@f.co']);
