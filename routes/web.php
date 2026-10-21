@@ -20,6 +20,10 @@ Route::middleware('signed')->group(function () {
     Route::match(['get', 'post'], '/u/{contact}', [TrackingController::class, 'unsubscribe'])->name('unsubscribe');
 });
 
+// Brevo webhook — unauthenticated by Brevo's design, so the secret in the URL path is the auth.
+// CSRF is excluded via bootstrap/app.php (webhooks/*).
+Route::post('/webhooks/brevo/{secret}', [\App\Http\Controllers\BrevoController::class, 'webhook']);
+
 Route::middleware('guest')->group(function () {
     Route::get('/login', [LoginController::class, 'show'])->name('login');
     Route::post('/login', [LoginController::class, 'store']);
@@ -43,6 +47,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/campaigns/{campaign}/launch', [CampaignController::class, 'launch']);
     Route::post('/campaigns/{campaign}/pause', [CampaignController::class, 'pause']);
     Route::post('/campaigns/{campaign}/resume', [CampaignController::class, 'resume']);
+
+    Route::get('/brevo', [\App\Http\Controllers\BrevoController::class, 'index']);
 
     Route::get('/industries', [IndustryController::class, 'index']);
     Route::post('/industries', [IndustryController::class, 'store']);

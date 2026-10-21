@@ -16,7 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectGuestsTo('/login');
         $middleware->redirectUsersTo('/');
         // One-click unsubscribe (RFC 8058) is a POST from the mailbox provider, no CSRF token possible.
-        $middleware->validateCsrfTokens(except: ['u/*']);
+        // Brevo webhooks are also unauthenticated POSTs — auth is the long secret in the URL path.
+        $middleware->validateCsrfTokens(except: ['u/*', 'webhooks/*']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Building2, ChevronRight, ChevronsLeft, ChevronsUpDown, FileText, LayoutDashboard, LogOut, Moon, Send, Settings, Sun, User as UserIcon, Users } from 'lucide-react';
+import { Bell, Building2, ChevronRight, ChevronsLeft, ChevronsUpDown, FileText, LayoutDashboard, LogOut, Moon, Send, Settings, Sun, User as UserIcon, Users } from 'lucide-react';
 import Logo from '@/Components/Logo';
 import MenuToggle from '@/Components/MenuToggle';
 import { ConfirmHost } from '@/Components/ConfirmDialog';
@@ -21,6 +21,7 @@ const nav = [
     { label: 'Templates', href: '/templates', icon: FileText },
     { label: 'Campaigns', href: '/campaigns', icon: Send },
     { label: 'Industries', href: '/industries', icon: Building2 },
+    { label: 'Brevo', href: '/brevo', icon: Bell },
     { label: 'Settings', href: '/settings/senders', icon: Settings, match: '/settings' },
 ];
 
