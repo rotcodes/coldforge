@@ -321,3 +321,17 @@ Total                 48 tests · 320 assertions · 8.6s
 - Google Postmaster Tools integration still open (future reputation monitoring)
 - Monaco bundle still loads from jsDelivr CDN at runtime (works but slow first-load; could bundle locally)
 - Dashboard JS bundle 370 KB (Recharts heavy) — code-split opportunity if first-paint latency ever becomes a real complaint
+
+## [2026-10-21 10:10] Fix — Agentic Mail webhooks 500ing on insert
+
+### What
+- First real `message.received` webhooks (after the operator wired the Hostinger webhook) all returned 500: `SQLSTATE[22001] Data too long for column 'body_url'`. Hostinger's `bodyUrl` is a pre-signed link well over 500 chars. Hostinger's own "Test" button passed because its sample payload has a short URL.
+- Migration `2026_10_21_000005_widen_inbox_messages_body_url` changes `inbox_messages.body_url` and `inbox_messages.subject` to TEXT (long "Re: Re: ..." subjects could hit the same 255 limit).
+- Test `test_long_body_url_and_subject_are_stored` (2,000-char URL + long subject). 49 tests green.
+
+### Deploy
+- Migration was scp'd to the server and run with `php artisan migrate --force` before this commit, so Hostinger's retries would land. Delete the untracked server copy (`database/migrations/2026_10_21_000005_*.php`) before the next `git pull`, otherwise git refuses to overwrite it.
+- Verified live: a Gmail → sameer@digitelly.net email landed in `/inbox` at 10:10 UTC after the fix.
+
+### Note
+- Hostinger Agentic Mail DOES sign webhooks (secret key shown once when the webhook is created). We still auth by path secret only; adding signature verification is a possible hardening step.

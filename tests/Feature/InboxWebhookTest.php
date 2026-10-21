@@ -97,6 +97,17 @@ class InboxWebhookTest extends TestCase
         $this->assertSame('bounced', $bouncer->fresh()->status, 'Bounced contacts should not revert to replied.');
     }
 
+    public function test_long_body_url_and_subject_are_stored(): void
+    {
+        $url = 'https://mail.hostinger.com/body?sig='.str_repeat('a', 2000);
+        $subject = 'Re:'.str_repeat(' long subject', 40);
+        $this->fire($this->payload(['eventId' => 'long-1', 'bodyUrl' => $url, 'subject' => $subject]))->assertOk();
+
+        $msg = InboxMessage::first();
+        $this->assertSame($url, $msg->body_url);
+        $this->assertSame($subject, $msg->subject);
+    }
+
     public function test_inbox_page_renders(): void
     {
         $user = User::create(['name' => 'Admin', 'email' => 'admin@test.dev', 'password' => 'secret-password']);
