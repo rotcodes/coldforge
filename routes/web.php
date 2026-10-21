@@ -24,6 +24,9 @@ Route::middleware('signed')->group(function () {
 // CSRF is excluded via bootstrap/app.php (webhooks/*).
 Route::post('/webhooks/brevo/{secret}', [\App\Http\Controllers\BrevoController::class, 'webhook']);
 
+// Hostinger Agentic Mail webhook — message.received fires here for each inbound email.
+Route::post('/webhooks/hmail/{secret}', [\App\Http\Controllers\InboxController::class, 'webhook']);
+
 Route::middleware('guest')->group(function () {
     Route::get('/login', [LoginController::class, 'show'])->name('login');
     Route::post('/login', [LoginController::class, 'store']);
@@ -49,6 +52,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/campaigns/{campaign}/resume', [CampaignController::class, 'resume']);
 
     Route::get('/brevo', [\App\Http\Controllers\BrevoController::class, 'index']);
+
+    Route::get('/inbox', [\App\Http\Controllers\InboxController::class, 'index']);
+    Route::post('/inbox/{message}/read', [\App\Http\Controllers\InboxController::class, 'markRead']);
+    Route::post('/inbox/mark-all-read', [\App\Http\Controllers\InboxController::class, 'markAll']);
 
     Route::get('/industries', [IndustryController::class, 'index']);
     Route::post('/industries', [IndustryController::class, 'store']);

@@ -18,6 +18,8 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
             ],
+            // Cheap live counter for the sidebar inbox badge. Guest requests return 0.
+            'unread_inbox' => fn () => $request->user() ? \App\Models\InboxMessage::where('is_read', false)->count() : 0,
         ];
     }
 }

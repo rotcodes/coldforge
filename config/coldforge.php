@@ -18,6 +18,10 @@ return [
     // `php artisan tinker --execute="echo bin2hex(random_bytes(24));"`
     'brevo_webhook_secret' => env('BREVO_WEBHOOK_SECRET'),
 
+    // Same pattern for Hostinger Agentic Mail — their outbound webhooks
+    // for message.received also use a path secret for auth.
+    'hostinger_mail_webhook_secret' => env('HOSTINGER_MAIL_WEBHOOK_SECRET'),
+
     // Default industries seeded on first run. Editable later from the Industries page.
     'default_industries' => [
         [
