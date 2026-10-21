@@ -11,7 +11,7 @@ class Contact extends Model
 {
     use HasFactory;
 
-    public const STATUSES = ['active', 'bounced', 'unsubscribed', 'complained'];
+    public const STATUSES = ['active', 'replied', 'bounced', 'unsubscribed', 'complained'];
 
     public const CORE_FIELDS = ['email', 'first_name', 'last_name', 'company', 'country'];
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Bell, Building2, ChevronRight, ChevronsLeft, ChevronsUpDown, FileText, LayoutDashboard, LogOut, Moon, Send, Settings, Sun, User as UserIcon, Users } from 'lucide-react';
+import { Bell, Building2, ChevronRight, ChevronsLeft, ChevronsUpDown, FileText, Inbox, LayoutDashboard, LogOut, Moon, Send, Settings, Sun, User as UserIcon, Users } from 'lucide-react';
 import Logo from '@/Components/Logo';
 import MenuToggle from '@/Components/MenuToggle';
 import { ConfirmHost } from '@/Components/ConfirmDialog';
@@ -20,6 +20,7 @@ const nav = [
     { label: 'Contacts', href: '/contacts', icon: Users },
     { label: 'Templates', href: '/templates', icon: FileText },
     { label: 'Campaigns', href: '/campaigns', icon: Send },
+    { label: 'Inbox', href: '/inbox', icon: Inbox, badge: 'unread' as const },
     { label: 'Industries', href: '/industries', icon: Building2 },
     { label: 'Brevo', href: '/brevo', icon: Bell },
     { label: 'Settings', href: '/settings/senders', icon: Settings, match: '/settings' },
@@ -87,11 +88,12 @@ function ProfileCard({ user, collapsed }: { user: User; collapsed: boolean }) {
     );
 }
 
-function NavLinks({ collapsed, isActive, onNavigate }: { collapsed: boolean; isActive: (i: (typeof nav)[number]) => boolean; onNavigate?: () => void }) {
+function NavLinks({ collapsed, isActive, onNavigate, badges }: { collapsed: boolean; isActive: (i: (typeof nav)[number]) => boolean; onNavigate?: () => void; badges: Record<string, number> }) {
     return (
         <nav className="space-y-1">
             {nav.map((item) => {
                 const active = isActive(item);
+                const badgeCount = 'badge' in item && item.badge ? badges[item.badge] : 0;
                 const link = (
                     <Link
                         key={item.href}
@@ -103,14 +105,20 @@ function NavLinks({ collapsed, isActive, onNavigate }: { collapsed: boolean; isA
                         )}
                     >
                         {active && <motion.span layoutId={onNavigate ? 'nav-active-m' : 'nav-active'} className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-brand" />}
-                        <item.icon className={cn('size-4 shrink-0', active && 'text-primary')} />
-                        {!collapsed && item.label}
+                        <span className="relative shrink-0">
+                            <item.icon className={cn('size-4', active && 'text-primary')} />
+                            {badgeCount > 0 && collapsed && <span className="absolute -right-1 -top-1 size-2 rounded-full bg-red-500 ring-2 ring-background" />}
+                        </span>
+                        {!collapsed && <span className="flex-1">{item.label}</span>}
+                        {!collapsed && badgeCount > 0 && (
+                            <span className="rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">{badgeCount > 99 ? '99+' : badgeCount}</span>
+                        )}
                     </Link>
                 );
                 return collapsed ? (
                     <Tooltip key={item.href}>
                         <TooltipTrigger asChild>{link}</TooltipTrigger>
-                        <TooltipContent side="right">{item.label}</TooltipContent>
+                        <TooltipContent side="right">{item.label}{badgeCount > 0 && ` · ${badgeCount}`}</TooltipContent>
                     </Tooltip>
                 ) : (
                     link
@@ -154,6 +162,7 @@ export default function AppLayout({ title, crumbs, children }: { title: string; 
 
     const user = props.auth.user!;
     const trail: Crumb[] = crumbs ?? [{ label: title }];
+    const badges = { unread: (props as any).unread_inbox ?? 0 };
 
     return (
         <TooltipProvider delayDuration={200}>
@@ -172,7 +181,7 @@ export default function AppLayout({ title, crumbs, children }: { title: string; 
                         </Link>
                     </div>
                     <div className="flex-1 overflow-y-auto px-3 py-4">
-                        <NavLinks collapsed={collapsed} isActive={isActive} />
+                        <NavLinks collapsed={collapsed} isActive={isActive} badges={badges} />
                     </div>
                     <div className="space-y-2 p-3">
                         <button
@@ -201,7 +210,7 @@ export default function AppLayout({ title, crumbs, children }: { title: string; 
                         </div>
                         <div className="flex-1 overflow-y-auto px-3 py-4">
                             <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.2, delay: 0.05 }}>
-                                <NavLinks collapsed={false} isActive={isActive} onNavigate={() => setMobileOpen(false)} />
+                                <NavLinks collapsed={false} isActive={isActive} onNavigate={() => setMobileOpen(false)} badges={badges} />
                             </motion.div>
                         </div>
                         <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
