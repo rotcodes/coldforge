@@ -13,6 +13,11 @@ return [
     // Postal address shown in the unsubscribe footer (CAN-SPAM). Leave blank to omit.
     'footer_address' => env('COLDFORGE_FOOTER_ADDRESS', ''),
 
+    // Random path secret for the Brevo webhook URL. Brevo doesn't sign webhooks,
+    // so the secret in the URL path is the authentication layer. Generate via
+    // `php artisan tinker --execute="echo bin2hex(random_bytes(24));"`
+    'brevo_webhook_secret' => env('BREVO_WEBHOOK_SECRET'),
+
     // Default industries seeded on first run. Editable later from the Industries page.
     'default_industries' => [
         [
