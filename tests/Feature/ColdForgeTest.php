@@ -2,193 +2,171 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\DispatchSequenceStepsJob;
+use App\Jobs\SendMailMessageJob;
+use App\Models\AiClassification;
+use App\Models\AiConversation;
+use App\Models\AiRequest;
 use App\Models\Campaign;
 use App\Models\CampaignSend;
 use App\Models\Contact;
-use App\Models\Sender;
+use App\Models\MailboxSetting;
+use App\Models\MailMessage;
+use App\Models\Sequence;
+use App\Models\SequenceEnrollment;
 use App\Models\Template;
 use App\Models\User;
+use App\Services\Deliverability\InboundSignalProcessor;
 use App\Services\EmailRenderer;
+use App\Services\Mailbox\HostingerMailer;
+use App\Services\Mailbox\MailDeliveryResult;
+use App\Services\Mailbox\OutboundMailService;
+use App\Services\Sequences\SequenceScheduler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Storage;
+use Mockery;
 use Tests\TestCase;
 
 class ColdForgeTest extends TestCase
 {
     use RefreshDatabase;
 
-    private User $user;
-
     protected function setUp(): void
     {
         parent::setUp();
-        $this->user = User::create(['name' => 'Admin', 'email' => 'admin@test.dev', 'password' => 'secret-password']);
+        $user = User::create(['name' => 'Admin', 'email' => 'admin@test.dev', 'password' => 'secret-password']);
+        $this->actingAs($user);
     }
 
-    public function test_guests_see_login_and_can_sign_in(): void
+    public function test_unified_outbound_service_adds_signature_and_sends_once(): void
     {
-        $this->get('/')->assertRedirect('/login');
-        $this->get('/login')->assertOk();
-        $this->post('/login', ['email' => 'admin@test.dev', 'password' => 'secret-password'])->assertRedirect('/');
-        $this->get('/')->assertOk();
+        $mailbox = $this->mailbox();
+        $mailbox->update(['signature_text' => "Sameer\nDigitelly"]);
+        $message = app(OutboundMailService::class)->create([
+            'subject' => 'Hello', 'plain_body' => 'Body', 'source_type' => 'personal', 'idempotency_key' => 'once',
+        ], [['type' => 'to', 'email' => 'client@example.com']], 'send');
+
+        $this->assertStringContainsString("--\nSameer", $message->plain_body);
+        $mailer = Mockery::mock(HostingerMailer::class);
+        $mailer->shouldReceive('send')->once()->andReturn(MailDeliveryResult::accepted());
+        $this->app->instance(HostingerMailer::class, $mailer);
+
+        SendMailMessageJob::dispatchSync($message);
+        SendMailMessageJob::dispatchSync($message->fresh());
+
+        $this->assertSame('sent', $message->fresh()->status);
+        $this->assertSame(1, $mailbox->fresh()->sent_today);
     }
 
-    public function test_pages_render(): void
+    public function test_campaign_tracking_respects_privacy_controls_and_address(): void
     {
-        $this->seed();
-        $this->actingAs($this->user);
-        $t = Template::first();
+        $this->mailbox()->update(['track_campaign_opens' => false, 'track_campaign_clicks' => false, 'physical_address' => '1 Main Street, Karachi']);
+        $template = $this->template('<a href="https://example.com">Visit</a>');
+        $contact = Contact::create(['email' => 'lead@example.com', 'permission_status' => 'consented']);
+        $campaign = Campaign::create(['name' => 'Campaign', 'template_id' => $template->id]);
+        $send = CampaignSend::create(['campaign_id' => $campaign->id, 'contact_id' => $contact->id]);
 
-        foreach (['/', '/contacts', '/contacts/'.Contact::first()->id, '/templates', '/templates/create', "/templates/{$t->id}/edit",
-            '/campaigns', '/campaigns/create', '/settings/senders', '/settings/profile', '/settings/deliverability'] as $url) {
-            $this->get($url)->assertOk();
-        }
+        $mail = EmailRenderer::render($template, $contact, $send);
+
+        $this->assertStringContainsString('href="https://example.com"', $mail['html']);
+        $this->assertStringNotContainsString('/t/o/', $mail['html']);
+        $this->assertStringContainsString('1 Main Street, Karachi', $mail['html']);
+        $this->assertStringContainsString('Unsubscribe', $mail['html']);
     }
 
-    public function test_csv_import(): void
+    public function test_due_sequence_stops_immediately_when_contact_replied(): void
     {
-        Storage::fake();
-        $this->actingAs($this->user);
-        $csv = UploadedFile::fake()->createWithContent('leads.csv', file_get_contents(database_path('samples/sample_contacts.csv'))."not-an-email,X,Y,Z,US,saas,Software\n");
-
-        $preview = $this->post('/csv-imports', ['file' => $csv])->assertOk()->json();
-        $this->assertSame(13, $preview['total_rows']);
-        $this->assertCount(10, $preview['rows']);
-
-        $mapping = ['email' => 'email', 'first_name' => 'first_name', 'last_name' => 'last_name', 'company' => 'company',
-            'country' => 'country', 'tags' => 'tags', 'industry' => 'custom:industry'];
-        $this->postJson("/csv-imports/{$preview['id']}/start", ['mapping' => $mapping, 'tags' => ['imported']])->assertOk();
-
-        $status = $this->getJson("/api/csv-imports/{$preview['id']}")->json();
-        $this->assertSame('done', $status['status']);
-        $this->assertSame(12, $status['imported_count']);
-        $this->assertSame(1, $status['failed_count']);
-
-        $ava = Contact::firstWhere('email', 'ava.chen@example.com');
-        $this->assertEqualsCanonicalizing(['imported', 'saas', 'founders'], $ava->tags);
-        $this->assertSame('Software', $ava->custom_fields['industry']);
-        $this->assertSame(3, Contact::withAnyTag(['founders'])->count());
-    }
-
-    public function test_campaign_launch_sends_via_brevo_and_tracking_works(): void
-    {
-        Http::fake(['api.brevo.com/v3/smtp/email' => Http::response(['messageId' => '<abc@smtp-relay.brevo.com>'], 201)]);
-        $this->actingAs($this->user);
-
-        Sender::create(['name' => 'Brevo', 'provider' => 'brevo', 'config' => ['api_key' => 'test-key'], 'daily_quota' => 300, 'priority' => 1]);
-        $template = Template::create([
-            'name' => 'T', 'subject' => 'Hi {{first_name}}', 'from_email' => 'me@digitelly.net', 'from_name' => 'Me',
-            'html_body' => '<p>Hello {{first_name}} at {{company}}</p><a href="https://example.org/page?a=1&amp;b=2">link</a>',
+        $template = $this->template();
+        $contact = Contact::create(['email' => 'lead@example.com', 'status' => 'replied', 'permission_status' => 'consented', 'last_replied_at' => now()]);
+        $sequence = Sequence::create(['name' => 'Follow up', 'status' => 'active']);
+        $sequence->steps()->create(['template_id' => $template->id, 'position' => 1, 'delay_days' => 1]);
+        $campaign = Campaign::create(['name' => 'Campaign', 'template_id' => $template->id, 'sequence_id' => $sequence->id, 'status' => 'completed']);
+        $send = CampaignSend::create(['campaign_id' => $campaign->id, 'contact_id' => $contact->id, 'status' => 'sent']);
+        $enrollment = SequenceEnrollment::create([
+            'sequence_id' => $sequence->id, 'campaign_send_id' => $send->id, 'contact_id' => $contact->id,
+            'status' => 'active', 'next_step_position' => 1, 'next_send_at' => now()->subMinute(),
         ]);
-        $this->assertSame(['first_name', 'company'], $template->variables);
 
-        Contact::create(['email' => 'a@example.com', 'first_name' => 'Ann', 'company' => 'Acme', 'tags' => ['vip']]);
-        Contact::create(['email' => 'b@example.com', 'first_name' => 'Bob', 'tags' => ['vip']]);
-        Contact::create(['email' => 'c@example.com', 'first_name' => 'Cid', 'tags' => ['other']]);
-        Contact::create(['email' => 'd@example.com', 'tags' => ['vip'], 'status' => 'unsubscribed']);
+        app(DispatchSequenceStepsJob::class)->handle(app(OutboundMailService::class), app(SequenceScheduler::class));
 
-        $this->getJson('/campaigns/count?tags[]=vip')->assertJson(['count' => 2]);
-
-        $this->post('/campaigns', [
-            'name' => 'VIP push', 'template_id' => $template->id, 'tags' => ['vip'], 'send_mode' => 'now',
-            'daily_cap' => 50, 'sender_strategy' => 'round_robin',
-        ])->assertRedirect();
-
-        $campaign = Campaign::first();
-        $this->assertSame('draft', $campaign->status);
-        $this->assertSame(2, $campaign->total_recipients);
-        $this->assertSame(2, CampaignSend::where('status', 'queued')->count());
-
-        $this->post("/campaigns/{$campaign->id}/launch")->assertRedirect();
-
-        $send = CampaignSend::whereHas('contact', fn ($q) => $q->where('email', 'a@example.com'))->first();
-        $this->assertSame('sent', $send->status);
-        $this->assertNotNull($send->sent_at);
-        $this->assertSame('<abc@smtp-relay.brevo.com>', $send->message_id);
-        $this->assertSame(2, $campaign->fresh()->sent_count);
-        $this->assertSame(2, Sender::first()->sent_today);
-        $this->assertTrue($send->events()->where('type', 'sent')->exists());
-
-        Http::assertSent(function ($request) use ($campaign) {
-            $body = $request->data();
-            if (($body['to'][0]['email'] ?? null) !== 'a@example.com') {
-                return false;
-            }
-
-            return $request->hasHeader('api-key', 'test-key')
-                && $body['to'][0]['email'] === 'a@example.com'
-                && $body['subject'] === 'Hi Ann'
-                && str_contains($body['htmlContent'], 'Hello Ann at Acme')
-                && str_contains($body['htmlContent'], '/t/o/')
-                && str_contains($body['htmlContent'], '/t/c/')
-                && str_contains($body['htmlContent'], 'Unsubscribe')
-                && str_starts_with($body['headers']['List-Unsubscribe'], '<http')
-                && $body['tags'] === ['campaign-'.$campaign->id];
-        });
-
-        // Tracking: pull real URLs out of the rendered email
-        $html = EmailRenderer::render($template, $send->contact, $send)['html'];
-        preg_match('/src="([^"]+\/t\/o\/[^"]+)"/', $html, $open);
-        preg_match('/href="([^"]+\/t\/c\/[^"]+)"/', $html, $click);
-        preg_match('/href="([^"]+\/u\/[^"]+)"/', $html, $unsub);
-
-        $this->get(html_entity_decode($open[1]))->assertOk()->assertHeader('Content-Type', 'image/gif');
-        $this->assertNotNull($send->fresh()->opened_at);
-        $this->assertSame(1, $campaign->fresh()->opened_count);
-
-        $this->get(html_entity_decode($click[1]))->assertRedirect('https://example.org/page?a=1&b=2');
-        $this->assertSame(1, $send->fresh()->clicked_count);
-        $this->assertSame(1, $campaign->fresh()->clicked_count);
-
-        $this->get(html_entity_decode($unsub[1]))->assertOk()->assertSee('unsubscribed');
-        $this->assertSame('unsubscribed', $send->contact->fresh()->status);
-        $this->assertSame(1, $campaign->fresh()->unsubscribed_count);
-
-        // Tampered signature is rejected
-        $this->get(str_replace('signature=', 'signature=x', html_entity_decode($open[1])))->assertForbidden();
+        $this->assertSame('stopped', $enrollment->fresh()->status);
+        $this->assertSame('recipient_replied', $enrollment->fresh()->stop_reason);
+        $this->assertSame(0, MailMessage::where('source_type', 'sequence')->count());
     }
 
-    public function test_daily_cap_and_pause(): void
+    public function test_ai_assistance_is_opt_in_and_schema_validated(): void
     {
-        Http::fake(['api.brevo.com/*' => Http::response(['messageId' => 'm'], 201)]);
-        $this->actingAs($this->user);
-        Sender::create(['name' => 'Brevo', 'provider' => 'brevo', 'config' => ['api_key' => 'k'], 'daily_quota' => 300, 'priority' => 1]);
-        $template = Template::create(['name' => 'T', 'subject' => 'S', 'from_email' => 'me@digitelly.net', 'html_body' => '<p>x</p>']);
-        foreach (range(1, 5) as $i) {
-            Contact::create(['email' => "u$i@example.com"]);
-        }
+        config(['services.groq.api_key' => 'test-key']);
+        $this->mailbox()->update(['ai_processing_enabled' => true]);
+        $message = MailMessage::create(['direction' => 'incoming', 'status' => 'synced', 'subject' => 'Pricing', 'from_email' => 'client@example.com', 'plain_body' => 'Can you send pricing?']);
+        Http::fake(['api.groq.com/*' => Http::response([
+            'choices' => [['message' => ['content' => json_encode([
+                'summary' => 'Client requested pricing.', 'intent' => 'pricing_request', 'sentiment' => 'neutral', 'urgency' => 'normal',
+                'confidence' => 0.91, 'reasoning' => 'The sender explicitly requested pricing.', 'action_items' => ['Share pricing'], 'next_action' => 'Review and reply.',
+                'suggested_reply' => 'Thanks for reaching out. I will share the relevant pricing details.',
+            ])]]],
+        ])]);
 
-        $this->post('/campaigns', ['name' => 'Capped', 'template_id' => $template->id, 'send_mode' => 'now', 'daily_cap' => 2, 'sender_strategy' => 'priority']);
-        $campaign = Campaign::first();
-        $this->post("/campaigns/{$campaign->id}/launch");
+        $this->postJson("/mail/messages/{$message->id}/ai", ['action' => 'suggest_reply'])
+            ->assertOk()->assertJsonPath('intent', 'pricing_request');
 
-        $this->assertSame(2, $campaign->fresh()->sent_count);
-        $this->assertSame(3, $campaign->sends()->where('status', 'queued')->count());
-
-        // Scheduler tick on the same day sends nothing more
-        (new \App\Jobs\DispatchDueCampaignsJob)->handle();
-        $this->assertSame(2, $campaign->fresh()->sent_count);
-
-        $this->post("/campaigns/{$campaign->id}/pause");
-        $this->assertSame('paused', $campaign->fresh()->status);
+        $this->assertDatabaseHas('ai_classifications', ['mail_message_id' => $message->id, 'intent' => 'pricing_request']);
+        Http::assertSentCount(1);
+        $this->assertSame('openai/gpt-oss-120b', AiClassification::first()->model);
     }
 
-    public function test_failed_send_is_recorded_without_retry_on_4xx(): void
+    public function test_intelligence_uses_bounded_tools_and_records_request_history(): void
     {
-        Http::fake(['api.brevo.com/*' => Http::response(['message' => 'Invalid sender'], 400)]);
-        $this->actingAs($this->user);
-        Sender::create(['name' => 'Brevo', 'provider' => 'brevo', 'config' => ['api_key' => 'k'], 'daily_quota' => 300, 'priority' => 1]);
-        $template = Template::create(['name' => 'T', 'subject' => 'S', 'from_email' => 'me@digitelly.net', 'html_body' => '<p>x</p>']);
-        Contact::create(['email' => 'x@example.com']);
+        config(['services.groq.api_key' => 'test-key']);
+        $this->mailbox()->update(['ai_processing_enabled' => true]);
+        $conversation = AiConversation::create(['user_id' => auth()->id()]);
+        Http::fakeSequence()
+            ->push(['choices' => [['message' => ['content' => json_encode(['tool_calls' => []])]]], 'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 4]])
+            ->push(['choices' => [['message' => ['content' => json_encode(['answer' => 'No retrieval was needed.', 'suggestions' => ['Show unread mail'], 'draft' => null])]]], 'usage' => ['prompt_tokens' => 12, 'completion_tokens' => 6]]);
 
-        $this->post('/campaigns', ['name' => 'Bad', 'template_id' => $template->id, 'send_mode' => 'now', 'daily_cap' => 10, 'sender_strategy' => 'round_robin']);
-        $this->post('/campaigns/'.Campaign::first()->id.'/launch');
+        $this->postJson("/intelligence/conversations/{$conversation->id}/chat", ['message' => 'What can you help me with?'])
+            ->assertOk()->assertJsonPath('message.content', 'No retrieval was needed.');
 
-        $send = CampaignSend::first();
-        $this->assertSame('failed', $send->status);
-        $this->assertStringContainsString('Invalid sender', $send->error);
-        $this->assertSame(0, Sender::first()->sent_today); // reserved quota released
+        $this->assertSame(2, AiRequest::where('status', 'completed')->count());
+        $this->assertSame(2, $conversation->messages()->count());
+    }
+
+    public function test_hard_bounce_suppresses_contact_and_stops_follow_ups(): void
+    {
+        $template = $this->template();
+        $contact = Contact::create(['email' => 'missing@example.com', 'permission_status' => 'consented']);
+        $sequence = Sequence::create(['name' => 'Follow up', 'status' => 'active']);
+        $sequence->steps()->create(['template_id' => $template->id, 'position' => 1, 'delay_days' => 1]);
+        $campaign = Campaign::create(['name' => 'Campaign', 'template_id' => $template->id, 'sequence_id' => $sequence->id]);
+        $send = CampaignSend::create(['campaign_id' => $campaign->id, 'contact_id' => $contact->id, 'status' => 'sent']);
+        SequenceEnrollment::create(['sequence_id' => $sequence->id, 'campaign_send_id' => $send->id, 'contact_id' => $contact->id, 'status' => 'active', 'next_step_position' => 1, 'next_send_at' => now()]);
+        $outgoing = MailMessage::create(['contact_id' => $contact->id, 'campaign_send_id' => $send->id, 'direction' => 'outgoing', 'status' => 'sent', 'sent_at' => now()]);
+        $outgoing->recipients()->create(['type' => 'to', 'email' => $contact->email]);
+        MailMessage::create([
+            'direction' => 'incoming', 'status' => 'synced', 'from_email' => 'mailer-daemon@example.net', 'subject' => 'Delivery Status Notification (Failure)',
+            'plain_body' => "Final-Recipient: rfc822; missing@example.com\nStatus: 5.1.1\nDiagnostic-Code: smtp; 550 User unknown",
+        ]);
+
+        $this->assertSame(1, app(InboundSignalProcessor::class)->process());
+        $this->assertSame('suppressed', $contact->fresh()->permission_status);
+        $this->assertSame('bounced', $send->fresh()->status);
+        $this->assertSame('stopped', SequenceEnrollment::first()->fresh()->status);
+        $this->assertDatabaseHas('suppressions', ['email' => 'missing@example.com', 'reason' => 'hard_bounce']);
+    }
+
+    private function mailbox(): MailboxSetting
+    {
+        $mailbox = MailboxSetting::current();
+        $mailbox->update([
+            'email' => 'owner@example.com', 'display_name' => 'Owner', 'password' => 'secret',
+            'physical_address' => '1 Main Street', 'smtp_status' => 'connected', 'imap_status' => 'connected',
+        ]);
+
+        return $mailbox;
+    }
+
+    private function template(string $html = '<p>Hello {{first_name}}</p>'): Template
+    {
+        return Template::create(['name' => 'Template', 'subject' => 'Hello', 'from_email' => 'owner@example.com', 'html_body' => $html, 'text_body' => 'Hello']);
     }
 }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CampaignSend;
 use App\Models\Contact;
+use App\Models\Suppression;
 use Illuminate\Http\Request;
 
 /** Public, signed endpoints hit from inside sent emails. */
@@ -41,9 +42,11 @@ class TrackingController extends Controller
 
     public function unsubscribe(Request $request, Contact $contact)
     {
-        if ($contact->status === 'active') {
-            $contact->update(['status' => 'unsubscribed']);
-        }
+        $contact->update(['status' => 'unsubscribed', 'permission_status' => 'suppressed']);
+        Suppression::updateOrCreate(
+            ['email' => strtolower($contact->email)],
+            ['reason' => 'unsubscribed', 'source' => 'campaign_link', 'suppressed_at' => now()],
+        );
 
         $send = CampaignSend::where('id', $request->query('s'))->where('contact_id', $contact->id)->first();
         if ($send && ! $send->unsubscribed_at) {

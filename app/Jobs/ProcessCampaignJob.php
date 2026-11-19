@@ -3,13 +3,13 @@
 namespace App\Jobs;
 
 use App\Models\Campaign;
-use App\Services\Senders\SenderRegistry;
+use App\Models\MailboxSetting;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
 /** Moves up to (daily_cap - sent today) queued sends into the send queue. Runs every minute per running campaign. */
-class ProcessCampaignJob implements ShouldQueue, ShouldBeUnique
+class ProcessCampaignJob implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
@@ -45,13 +45,11 @@ class ProcessCampaignJob implements ShouldQueue, ShouldBeUnique
         }
 
         foreach ($queued->orderBy('id')->limit($remaining)->get() as $send) {
-            $sender = SenderRegistry::pick($campaign->sender_strategy);
-            if (! $sender) {
-                return; // all senders out of quota or inactive; try again next minute
+            $mailbox = MailboxSetting::current()->refreshAllowance();
+            if (! $mailbox->configured() || $mailbox->automation_paused || $mailbox->sent_today >= $mailbox->daily_allowance) {
+                return;
             }
-
-            $sender->increment('sent_today'); // reserve quota now so a batch can't overshoot it
-            $send->update(['status' => 'sending', 'sender_id' => $sender->id]);
+            $send->update(['status' => 'sending']);
             SendEmailJob::dispatch($send);
         }
     }

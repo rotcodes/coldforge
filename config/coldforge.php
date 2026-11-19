@@ -1,33 +1,20 @@
 <?php
 
 return [
-    // Fallback Brevo key for a Brevo sender whose own api_key is blank (used by the seeded sender).
-    'brevo_api_key' => env('BREVO_API_KEY'),
-
     // Default per-campaign daily cap shown in the wizard.
     'default_daily_cap' => (int) env('COLDFORGE_DAILY_CAP', 50),
 
-    // Max sends per second per sender (Brevo allows ~10/sec).
-    'sender_tps' => (int) env('COLDFORGE_SENDER_TPS', 10),
+    'attachment_scanner' => [
+        'binary' => env('CLAMAV_BINARY'),
+        'bypass_local' => env('ATTACHMENT_SCAN_BYPASS', false),
+    ],
 
-    // Postal address shown in the unsubscribe footer (CAN-SPAM). Leave blank to omit.
-    'footer_address' => env('COLDFORGE_FOOTER_ADDRESS', ''),
-
-    // Random path secret for the Brevo webhook URL. Brevo doesn't sign webhooks,
-    // so the secret in the URL path is the authentication layer. Generate via
-    // `php artisan tinker --execute="echo bin2hex(random_bytes(24));"`
-    'brevo_webhook_secret' => env('BREVO_WEBHOOK_SECRET'),
-
-    // Reply mailbox polled every minute by `inbox:poll` (read-only). Polling the mailbox
-    // instead of a provider webhook also catches mail sent to its aliases.
-    'inbox_imap' => [
-        'host' => env('INBOX_IMAP_HOST', 'imap.hostinger.com'),
-        'port' => (int) env('INBOX_IMAP_PORT', 993),
-        'encryption' => env('INBOX_IMAP_ENCRYPTION', 'ssl'),
-        'username' => env('INBOX_IMAP_USERNAME'),
-        'password' => env('INBOX_IMAP_PASSWORD'),
-        'folder' => env('INBOX_IMAP_FOLDER', 'INBOX'),
-        'first_run_days' => (int) env('INBOX_IMAP_FIRST_RUN_DAYS', 7),
+    'retention' => [
+        'message_bodies_days' => (int) env('RETENTION_MESSAGE_BODIES_DAYS', 365),
+        'activity_days' => (int) env('RETENTION_ACTIVITY_DAYS', 180),
+        'sync_logs_days' => (int) env('RETENTION_SYNC_LOGS_DAYS', 90),
+        'ai_history_days' => (int) env('RETENTION_AI_HISTORY_DAYS', 180),
+        'downloaded_attachments_days' => (int) env('RETENTION_ATTACHMENTS_DAYS', 90),
     ],
 
     // Default industries seeded on first run. Editable later from the Industries page.

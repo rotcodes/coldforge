@@ -29,16 +29,16 @@ export default function Login() {
                 {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </button>
 
-            {/* floating depth orbs */}
+            {/* restrained neutral depth */}
             <motion.div
                 aria-hidden
-                className="pointer-events-none absolute -left-24 top-1/4 size-72 rounded-full bg-indigo-500/20 blur-3xl"
+                className="pointer-events-none absolute -left-24 top-1/4 size-72 rounded-full bg-white/[0.035] blur-3xl"
                 animate={{ y: [0, -20, 0] }}
                 transition={{ duration: 8, repeat: Infinity, ease: 'easeInOut' }}
             />
             <motion.div
                 aria-hidden
-                className="pointer-events-none absolute -right-24 bottom-1/4 size-72 rounded-full bg-violet-500/20 blur-3xl"
+                className="pointer-events-none absolute -right-24 bottom-1/4 size-72 rounded-full bg-white/[0.025] blur-3xl"
                 animate={{ y: [0, 20, 0] }}
                 transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
             />
@@ -59,7 +59,7 @@ export default function Login() {
                             <Input id="password" type="password" autoComplete="current-password" value={form.data.password} onChange={(e) => form.setData('password', e.target.value)} />
                         </Field>
                         <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <input type="checkbox" checked={form.data.remember} onChange={(e) => form.setData('remember', e.target.checked)} className="size-4 rounded border-input accent-indigo-500" />
+                            <input type="checkbox" checked={form.data.remember} onChange={(e) => form.setData('remember', e.target.checked)} className="size-4 rounded border-input accent-primary" />
                             Keep me signed in
                         </label>
                         <Button type="submit" className="w-full" disabled={form.processing}>

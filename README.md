@@ -1,6 +1,6 @@
 # ColdForge
 
-A lean cold-outreach dashboard for one operator: **upload leads → write template → schedule send → watch stats.**
+A single-operator business email and permission-based outreach workspace: **sync Hostinger mail → manage conversations → schedule messages → run safeguarded campaigns and follow-ups.**
 
 Laravel 12 · Inertia 2 · React 18 + TypeScript · Tailwind 3 + shadcn/ui · Framer Motion · MariaDB · Redis queue.
 
@@ -48,18 +48,18 @@ npm run build                # or `npm run dev` for hot reload
 php artisan serve
 ```
 
-Open http://127.0.0.1:8000 and sign in. Outside production the seeder also adds 12 demo contacts (`@example.com`), a sample template and a Brevo sender with no key.
+Open http://127.0.0.1:8000 and sign in. Outside production the seeder also adds 12 demo contacts (`@example.com`) and a sample template. Demo contacts start with unknown campaign permission and cannot be mailed until explicitly reviewed.
 
-To actually send, put a Brevo API key in `BREVO_API_KEY` (or on the sender in Settings → Senders).
+Open **Settings → Mailbox** and save the Hostinger email/password, SMTP, IMAP, daily allowance, physical mailing address, signatures, and privacy controls. Test SMTP and IMAP separately before use. Groq is optional and email processing is opt-in.
 
-Tests run against the `coldforge_test` MySQL database (root, no password, set in `phpunit.xml`). Brevo is faked, so nothing leaves the machine:
+Tests run against the `coldforge_test` MySQL database (root, no password, set in `phpunit.xml`). SMTP, IMAP, and Groq are faked or bypassed, so nothing leaves the machine:
 
 ```bash
 php artisan test
 ```
 
-- `tests/Feature/ColdForgeTest.php`: login, every page renders, CSV import, campaign → Brevo send → open/click/unsubscribe tracking, daily cap, pause, failures
-- `tests/Feature/ManagementTest.php`: contact/template/sender CRUD + validation, secret masking, quota reset, quick send, profile/password, scheduling, login throttle, click-proxy safety
+- `tests/Feature/ColdForgeTest.php`: unified delivery idempotency, signatures, privacy-aware tracking, sequence reply stops, and Groq schema validation
+- `tests/Feature/ManagementTest.php`: workspace rendering, encrypted mailbox credentials, explicit recipient permission, launch safeguards, and durable suppression
 
 Sample CSV for the importer: `database/samples/sample_contacts.csv`.
 
@@ -67,11 +67,11 @@ Sample CSV for the importer: `database/samples/sample_contacts.csv`.
 
 ## How sending works
 
-1. **Campaigns → New**: pick a template, filter contacts by tag, set the daily cap. This creates a **draft** plus one `campaign_sends` row per matching active contact.
-2. **Launch** sets the campaign to `running` (or `scheduled` if it has a future start time) and dispatches `ProcessCampaignJob`.
-3. `ProcessCampaignJob` moves up to *(daily cap − sent today)* queued sends to `sending`, picks a sender per send (round robin = least used today, priority = lowest number first) and dispatches `SendEmailJob`.
-4. `SendEmailJob` renders the template for the contact, rewrites links to the click tracker, adds the open pixel and unsubscribe footer, and calls the sender. Senders connect by API key (Brevo) or SMTP (any provider). It is rate limited per sender (`COLDFORGE_SENDER_TPS`, default 10/s). 429/5xx/network errors retry 3× with backoff (10s, 60s, 5m); other errors fail right away.
-5. The scheduler runs `DispatchDueCampaignsJob` every minute: it starts due scheduled campaigns and tops up every running one. That's how the daily cap rolls over to the next day.
+1. **Settings → Mailbox** stores one encrypted Hostinger mailbox used by every outbound feature and full IMAP synchronization.
+2. **Campaigns → New** selects a template, optional follow-up sequence, explicitly eligible contacts, schedule, and daily cap. This creates a draft plus one `campaign_sends` row per recipient.
+3. **Launch** requires configured credentials, a physical address, active automation, and administrator approval. It starts immediately or at the approved time.
+4. `SendEmailJob` renders and hands the durable message to `SendMailMessageJob`, the shared Hostinger SMTP engine used by personal, scheduled, test, campaign, and sequence email. It has idempotency, central allowance checks, rate limiting, retry/backoff, uncertainty handling, and Sent-folder reconciliation.
+5. The scheduler starts due campaigns/messages, dispatches eligible sequence steps, and synchronizes IMAP every minute. Follow-ups re-check reply, suppression, campaign, and permission state immediately before delivery.
 
 Tracking URLs are Laravel signed URLs (signature in the query string):
 
@@ -118,7 +118,7 @@ FLUSH PRIVILEGES;
 ```bash
 cd /var/www/coldforge
 cp .env.example .env
-nano .env                       # DB_PASSWORD, BREVO_API_KEY, COLDFORGE_FOOTER_ADDRESS
+nano .env                       # DB credentials, APP_URL, Redis, optional GROQ_API_KEY, CLAMAV_BINARY
 composer install --no-dev --optimize-autoloader
 php artisan key:generate
 npm ci && npm run build         # or build locally and upload public/build
@@ -129,7 +129,20 @@ sudo chown -R www-data:www-data storage bootstrap/cache
 sudo chmod -R 775 storage bootstrap/cache
 ```
 
-PHP extensions needed: `pdo_mysql mbstring intl curl xml zip bcmath`. Redis uses the bundled `predis` client, so `php-redis` is optional.
+PHP extensions needed: `pdo_mysql mbstring intl curl xml zip bcmath fileinfo`. Redis uses the bundled `predis` client, so `php-redis` is optional.
+
+Install ClamAV before attachment access is enabled in production. ColdForge fails closed if scanning is unavailable:
+
+```bash
+sudo apt update && sudo apt install -y clamav clamav-daemon
+sudo systemctl enable --now clamav-daemon
+sudo freshclam || true
+# in .env (confirm the path with: command -v clamdscan)
+CLAMAV_BINARY=/usr/bin/clamdscan
+ATTACHMENT_SCAN_BYPASS=false
+```
+
+After changing `.env`, run `php artisan config:cache`. Never enable `ATTACHMENT_SCAN_BYPASS` in production.
 
 ### 5. Nginx vhost
 `/etc/nginx/sites-available/coldforge`:
@@ -210,7 +223,7 @@ sudo crontab -u www-data -e
 
 ### 9. Smoke test
 - https://mail.digitelly.net shows the login. Sign in with the seeded password, then change it in **Settings → Profile**.
-- **Settings → Senders → Test** on the Brevo sender should say "connection OK".
+- **Settings → Mailbox** should show successful SMTP and IMAP connection tests.
 - **Settings → Deliverability**: check `digitelly.net`. Fix SPF/DKIM/DMARC before sending.
 - Dashboard **Quick send** to your own inbox.
 

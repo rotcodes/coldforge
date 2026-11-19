@@ -1,7 +1,7 @@
 import { FormEvent } from 'react';
 import { Link, useForm } from '@inertiajs/react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { ArrowUpRight, HelpCircle, Loader2, Plus, Send, Sparkles, Upload } from 'lucide-react';
+import { ArrowUpRight, CalendarClock, HelpCircle, Inbox, ListRestart, Loader2, Plus, Send, ShieldCheck, Sparkles, Upload } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import TiltCard from '@/Components/TiltCard';
 import StatusBadge from '@/Components/StatusBadge';
@@ -24,6 +24,7 @@ interface Props {
     templates: { id: number; name: string }[];
     contactCount: number;
     readiness: { tiers: { '1': number; '2': number; '3': number; '4': number }; unmapped: number };
+    operations: { unread: number; scheduled: number; followUps: number; allowanceRemaining: number; automationPaused: boolean; mailboxConfigured: boolean };
 }
 
 function ReadinessCard({ readiness }: { readiness: Props['readiness'] }) {
@@ -37,7 +38,7 @@ function ReadinessCard({ readiness }: { readiness: Props['readiness'] }) {
     return (
         <TiltCard hero className="p-5">
             <div className="mb-3 flex items-center gap-2">
-                <div className="grid size-8 place-items-center rounded-lg bg-brand text-white shadow-glow"><Sparkles className="size-4" /></div>
+                <div className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground shadow-glow"><Sparkles className="size-4" /></div>
                 <div>
                     <h2 className="text-sm font-semibold">Audience readiness</h2>
                     <p className="text-xs text-muted-foreground">How personalized your sends can be.</p>
@@ -78,11 +79,11 @@ function Sparkline({ data, id }: { data: Point[]; id: string }) {
             <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }} accessibilityLayer={false}>
                 <defs>
                     <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
+                        <stop offset="0%" stopColor="#a3a3a3" stopOpacity={0.3} />
+                        <stop offset="100%" stopColor="#a3a3a3" stopOpacity={0} />
                     </linearGradient>
                 </defs>
-                <Area type="monotone" dataKey="value" stroke="#8b5cf6" strokeWidth={1.75} fill={`url(#${id})`} isAnimationActive={false} />
+                <Area type="monotone" dataKey="value" stroke="#a3a3a3" strokeWidth={1.75} fill={`url(#${id})`} isAnimationActive={false} />
             </AreaChart>
         </ResponsiveContainer>
     );
@@ -98,7 +99,7 @@ function QuickSend({ templates }: { templates: Props['templates'] }) {
     return (
         <TiltCard hero className="p-5">
             <div className="mb-4 flex items-center gap-2">
-                <div className="grid size-8 place-items-center rounded-lg bg-brand text-white shadow-glow">
+                <div className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground shadow-glow">
                     <Send className="size-4" />
                 </div>
                 <div>
@@ -141,7 +142,7 @@ function QuickSend({ templates }: { templates: Props['templates'] }) {
     );
 }
 
-export default function Dashboard({ stats, chart, campaigns, templates, contactCount, readiness }: Props) {
+export default function Dashboard({ stats, chart, campaigns, templates, contactCount, readiness, operations }: Props) {
     return (
         <AppLayout title="Dashboard">
             <PageHeader
@@ -162,6 +163,16 @@ export default function Dashboard({ stats, chart, campaigns, templates, contactC
                     </>
                 }
             />
+
+            <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                    { label: 'Unread mail', value: operations.unread, icon: Inbox, href: '/mail?unread=1' },
+                    { label: 'Scheduled', value: operations.scheduled, icon: CalendarClock, href: '/mail?view=scheduled' },
+                    { label: 'Active follow-ups', value: operations.followUps, icon: ListRestart, href: '/sequences' },
+                    { label: 'Allowance left', value: operations.allowanceRemaining, icon: ShieldCheck, href: '/settings/mailbox' },
+                ].map((item) => <Link key={item.label} href={item.href} className="rounded-lg border bg-card p-4 transition-colors hover:bg-accent/40"><div className="flex items-center gap-2 text-xs text-muted-foreground"><item.icon className="size-3.5" />{item.label}</div><div className="mt-2 font-mono text-2xl font-semibold">{fmt(item.value)}</div></Link>)}
+            </div>
+            {(!operations.mailboxConfigured || operations.automationPaused) && <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-200">{!operations.mailboxConfigured ? 'Connect the Hostinger mailbox to enable synchronization and delivery.' : 'Automation is paused. Personal messages can still be sent manually.'}</div>}
 
             <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
                 {stats.map((s, i) => (
@@ -189,8 +200,8 @@ export default function Dashboard({ stats, chart, campaigns, templates, contactC
                             <AreaChart data={chart} margin={{ top: 4, right: 4, bottom: 0, left: -20 }} accessibilityLayer={false}>
                                 <defs>
                                     <linearGradient id="main" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="0%" stopColor="#6366f1" stopOpacity={0.4} />
-                                        <stop offset="100%" stopColor="#a855f7" stopOpacity={0} />
+                                        <stop offset="0%" stopColor="#a3a3a3" stopOpacity={0.35} />
+                                        <stop offset="100%" stopColor="#a3a3a3" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
                                 <CartesianGrid vertical={false} stroke="currentColor" className="text-border" strokeDasharray="3 3" />
@@ -202,7 +213,7 @@ export default function Dashboard({ stats, chart, campaigns, templates, contactC
                                     labelStyle={{ color: 'hsl(var(--muted-foreground))' }}
                                     formatter={(v) => [v, 'Sent']}
                                 />
-                                <Area type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} fill="url(#main)" />
+                                <Area type="monotone" dataKey="value" stroke="#a3a3a3" strokeWidth={2} fill="url(#main)" />
                             </AreaChart>
                         </ResponsiveContainer>
                     </div>

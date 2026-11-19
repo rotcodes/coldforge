@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Bell, Building2, ChevronRight, ChevronsLeft, ChevronsUpDown, FileText, Inbox, LayoutDashboard, LogOut, Moon, Send, Settings, Sun, User as UserIcon, Users } from 'lucide-react';
+import { Activity, BarChart3, Brain, ChevronRight, ChevronsLeft, ChevronsUpDown, FileText, Inbox, LayoutDashboard, ListRestart, LogOut, Moon, Send, Settings, Sun, User as UserIcon, Users } from 'lucide-react';
 import Logo from '@/Components/Logo';
 import MenuToggle from '@/Components/MenuToggle';
 import { ConfirmHost } from '@/Components/ConfirmDialog';
@@ -16,14 +16,17 @@ import { cn } from '@/lib/utils';
 import type { PageProps, User } from '@/types';
 
 const nav = [
-    { label: 'Dashboard', href: '/', icon: LayoutDashboard },
-    { label: 'Contacts', href: '/contacts', icon: Users },
-    { label: 'Templates', href: '/templates', icon: FileText },
-    { label: 'Campaigns', href: '/campaigns', icon: Send },
-    { label: 'Inbox', href: '/inbox', icon: Inbox, badge: 'unread' as const },
-    { label: 'Industries', href: '/industries', icon: Building2 },
-    { label: 'Brevo', href: '/brevo', icon: Bell },
-    { label: 'Settings', href: '/settings/senders', icon: Settings, match: '/settings' },
+    { label: 'Overview', href: '/', icon: LayoutDashboard, section: 'Workspace' },
+    { label: 'Mail', href: '/mail', icon: Inbox, badge: 'unread' as const, section: 'Workspace' },
+    { label: 'Contacts', href: '/contacts', icon: Users, section: 'Workspace' },
+    { label: 'Campaigns', href: '/campaigns', icon: Send, section: 'Workspace' },
+    { label: 'Sequences', href: '/sequences', icon: ListRestart, section: 'Workspace' },
+    { label: 'Templates', href: '/templates', icon: FileText, section: 'Workspace' },
+    { label: 'Intelligence', href: '/intelligence', icon: Brain, section: 'Intelligence' },
+    { label: 'Analytics', href: '/analytics', icon: BarChart3, section: 'Intelligence' },
+    { label: 'Deliverability', href: '/settings/deliverability', icon: Settings, section: 'System' },
+    { label: 'Activity', href: '/activity', icon: Activity, section: 'System' },
+    { label: 'Settings', href: '/settings/mailbox', icon: Settings, match: '/settings', section: 'System' },
 ];
 
 export type Crumb = { label: string; href?: string };
@@ -40,7 +43,7 @@ const initials = (name: string) =>
 function ProfileCard({ user, collapsed }: { user: User; collapsed: boolean }) {
     const avatar = (
         <Avatar className="size-8 shrink-0 ring-2 ring-primary/20">
-            <AvatarFallback className="bg-brand text-xs font-semibold text-white">{initials(user.name)}</AvatarFallback>
+            <AvatarFallback className="bg-primary text-xs font-semibold text-primary-foreground">{initials(user.name)}</AvatarFallback>
         </Avatar>
     );
 
@@ -76,7 +79,7 @@ function ProfileCard({ user, collapsed }: { user: User; collapsed: boolean }) {
                 <DropdownMenuItem onSelect={() => router.visit('/settings/profile')}>
                     <UserIcon /> My profile
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => router.visit('/settings/senders')}>
+                <DropdownMenuItem onSelect={() => router.visit('/settings/mailbox')}>
                     <Settings /> Settings
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -91,7 +94,7 @@ function ProfileCard({ user, collapsed }: { user: User; collapsed: boolean }) {
 function NavLinks({ collapsed, isActive, onNavigate, badges }: { collapsed: boolean; isActive: (i: (typeof nav)[number]) => boolean; onNavigate?: () => void; badges: Record<string, number> }) {
     return (
         <nav className="space-y-1">
-            {nav.map((item) => {
+            {nav.map((item, index) => {
                 const active = isActive(item);
                 const badgeCount = 'badge' in item && item.badge ? badges[item.badge] : 0;
                 const link = (
@@ -104,7 +107,7 @@ function NavLinks({ collapsed, isActive, onNavigate, badges }: { collapsed: bool
                             active ? 'bg-primary/10 text-foreground' : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                         )}
                     >
-                        {active && <motion.span layoutId={onNavigate ? 'nav-active-m' : 'nav-active'} className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-brand" />}
+                        {active && <motion.span layoutId={onNavigate ? 'nav-active-m' : 'nav-active'} className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary" />}
                         <span className="relative shrink-0">
                             <item.icon className={cn('size-4', active && 'text-primary')} />
                             {badgeCount > 0 && collapsed && <span className="absolute -right-1 -top-1 size-2 rounded-full bg-red-500 ring-2 ring-background" />}
@@ -115,13 +118,18 @@ function NavLinks({ collapsed, isActive, onNavigate, badges }: { collapsed: bool
                         )}
                     </Link>
                 );
-                return collapsed ? (
+                const wrapped = collapsed ? (
                     <Tooltip key={item.href}>
                         <TooltipTrigger asChild>{link}</TooltipTrigger>
                         <TooltipContent side="right">{item.label}{badgeCount > 0 && ` · ${badgeCount}`}</TooltipContent>
                     </Tooltip>
-                ) : (
-                    link
+                ) : link;
+                const showSection = !collapsed && (index === 0 || nav[index - 1].section !== item.section);
+                return (
+                    <div key={item.href}>
+                        {showSection && <div className="mb-2 mt-5 px-2.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground first:mt-0">{item.section}</div>}
+                        {wrapped}
+                    </div>
                 );
             })}
         </nav>

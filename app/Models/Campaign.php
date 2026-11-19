@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Campaign extends Model
 {
     protected $fillable = [
-        'name', 'template_id', 'sender_strategy', 'contact_filter', 'schedule_at', 'status', 'daily_cap', 'total_recipients',
+        'name', 'template_id', 'sequence_id', 'sender_strategy', 'contact_filter', 'schedule_at', 'status', 'daily_cap', 'total_recipients',
         'sent_count', 'opened_count', 'clicked_count', 'bounced_count', 'unsubscribed_count', 'replied_count',
     ];
 
@@ -26,5 +26,10 @@ class Campaign extends Model
     public function sends(): HasMany
     {
         return $this->hasMany(CampaignSend::class);
+    }
+
+    public function sequence(): BelongsTo
+    {
+        return $this->belongsTo(Sequence::class);
     }
 }

@@ -33,11 +33,11 @@ export default {
                 sm: 'calc(var(--radius) - 4px)',
             },
             backgroundImage: {
-                brand: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                brand: 'linear-gradient(135deg, #f4f4f5 0%, #d4d4d8 100%)',
             },
             boxShadow: {
-                glow: '0 8px 24px -8px rgba(99, 102, 241, 0.55)',
-                'glow-lg': '0 14px 32px -10px rgba(139, 92, 246, 0.7)',
+                glow: '0 0 0 1px rgba(255, 255, 255, 0.06)',
+                'glow-lg': '0 8px 24px rgba(0, 0, 0, 0.24)',
             },
         },
     },

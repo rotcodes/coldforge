@@ -6,8 +6,12 @@ use App\Jobs\ProcessCampaignJob;
 use App\Models\Campaign;
 use App\Models\Contact;
 use App\Models\Event;
-use App\Models\Sender;
+use App\Models\Industry;
+use App\Models\MailboxSetting;
+use App\Models\Sequence;
+use App\Models\SequenceEnrollment;
 use App\Models\Template;
+use App\Services\EmailRenderer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -27,10 +31,11 @@ class CampaignController extends Controller
         return Inertia::render('Campaigns/Create', [
             'templates' => Template::latest('updated_at')->get(['id', 'name', 'subject', 'from_email', 'updated_at', 'variables']),
             'tags' => ContactController::allTags(),
-            'activeCount' => Contact::where('status', 'active')->count(),
-            'senderCount' => Sender::where('is_active', true)->count(),
+            'activeCount' => Contact::matchingFilter([])->count(),
+            'mailboxConfigured' => MailboxSetting::current()->configured(),
             'defaultCap' => config('coldforge.default_daily_cap'),
-            'industries' => \App\Models\Industry::where('is_active', true)->orderBy('label')->get(['slug', 'label']),
+            'industries' => Industry::where('is_active', true)->orderBy('label')->get(['slug', 'label']),
+            'sequences' => Sequence::where('status', 'active')->with('steps:id,sequence_id,position,delay_days')->orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -72,7 +77,7 @@ class CampaignController extends Controller
         }
 
         $vars = $contact->templateVars();
-        $rendered = \App\Services\EmailRenderer::render($template, $contact);
+        $rendered = EmailRenderer::render($template, $contact);
 
         // Report which template vars actually used a fallback (empty source value replaced by non-empty resolved value).
         $usedFallback = [];
@@ -118,7 +123,7 @@ class CampaignController extends Controller
             'send_mode' => ['required', Rule::in(['now', 'later'])],
             'schedule_at' => ['nullable', 'required_if:send_mode,later', 'date', 'after:now'],
             'daily_cap' => ['required', 'integer', 'min:1', 'max:100000'],
-            'sender_strategy' => ['required', Rule::in(['round_robin', 'priority'])],
+            'sequence_id' => ['nullable', 'exists:sequences,id'],
         ]);
 
         $filter = [
@@ -136,10 +141,11 @@ class CampaignController extends Controller
             $campaign = Campaign::create([
                 'name' => $data['name'],
                 'template_id' => $data['template_id'],
+                'sequence_id' => $data['sequence_id'] ?? null,
                 'contact_filter' => $filter,
                 'schedule_at' => $data['send_mode'] === 'later' ? $data['schedule_at'] : null,
                 'daily_cap' => $data['daily_cap'],
-                'sender_strategy' => $data['sender_strategy'],
+                'sender_strategy' => 'single_mailbox',
                 'status' => 'draft',
             ]);
 
@@ -173,7 +179,12 @@ class CampaignController extends Controller
             ->limit(50)
             ->get(['events.id', 'events.type', 'events.payload', 'events.created_at', 'contacts.id as contact_id', 'contacts.email']);
 
-        return Inertia::render('Campaigns/Show', compact('campaign', 'breakdown', 'events'));
+        $recipients = $campaign->sends()->with([
+            'contact:id,email,first_name,last_name,permission_status,pipeline_status,last_replied_at',
+            'sequenceEnrollment:id,campaign_send_id,status,next_step_position,next_send_at,stop_reason',
+        ])->latest('id')->paginate(100, ['id', 'campaign_id', 'contact_id', 'status', 'sent_at', 'failed_at', 'error']);
+
+        return Inertia::render('Campaigns/Show', compact('campaign', 'breakdown', 'events', 'recipients'));
     }
 
     public function launch(Campaign $campaign)
@@ -198,6 +209,17 @@ class CampaignController extends Controller
         return $this->start($campaign, 'Campaign resumed.');
     }
 
+    public function cancel(Campaign $campaign)
+    {
+        abort_if(in_array($campaign->status, ['completed', 'cancelled'], true), 422);
+        $campaign->update(['status' => 'cancelled']);
+        $campaign->sends()->whereIn('status', ['queued', 'sending'])->update(['status' => 'cancelled', 'error' => 'Campaign cancelled by administrator.']);
+        SequenceEnrollment::whereHas('campaignSend', fn ($query) => $query->where('campaign_id', $campaign->id))
+            ->where('status', 'active')->update(['status' => 'stopped', 'stop_reason' => 'campaign_cancelled', 'stopped_at' => now(), 'next_send_at' => null]);
+
+        return back()->with('success', 'Campaign and pending follow-ups cancelled.');
+    }
+
     public function destroy(Campaign $campaign)
     {
         if ($campaign->status === 'running') {
@@ -210,6 +232,17 @@ class CampaignController extends Controller
 
     private function start(Campaign $campaign, string $message)
     {
+        $mailbox = MailboxSetting::current();
+        if (! $mailbox->configured()) {
+            return back()->with('error', 'Configure the Hostinger mailbox before launching a campaign.');
+        }
+        if (blank($mailbox->physical_address)) {
+            return back()->with('error', 'Add a physical mailing address in Mailbox settings before launching a campaign.');
+        }
+        if ($mailbox->automation_paused) {
+            return back()->with('error', 'Automation is paused. Resume it in Mailbox settings before launching.');
+        }
+
         if ($campaign->schedule_at?->isFuture()) {
             $campaign->update(['status' => 'scheduled']);
 

@@ -111,7 +111,7 @@ class IndustryController extends Controller
      */
     public function suggest()
     {
-        $groq = new GroqIndustrySuggester;
+        $groq = app(GroqIndustrySuggester::class);
         $source = 'heuristic';
         $suggestions = [];
 

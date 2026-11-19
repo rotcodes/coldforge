@@ -4,7 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Contact;
 use App\Models\Industry;
-use App\Models\Sender;
+use App\Models\MailboxSetting;
 use App\Models\Template;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -17,17 +17,7 @@ class DatabaseSeeder extends Seeder
         $this->seedUser();
         $this->seedIndustries();
 
-        if (! Sender::exists()) {
-            Sender::create([
-                'name' => 'Brevo',
-                'provider' => 'brevo',
-                'config' => ['method' => 'api', 'api_key' => ''], // blank key = falls back to BREVO_API_KEY in .env
-                'daily_quota' => 300,
-                'priority' => 1,
-                'is_active' => true,
-                'reset_at' => today(),
-            ]);
-        }
+        MailboxSetting::current();
 
         if (! Template::exists()) {
             Template::create([
@@ -49,6 +39,7 @@ class DatabaseSeeder extends Seeder
                 Contact::create([
                     'email' => $email, 'first_name' => $first, 'last_name' => $last, 'company' => $company, 'country' => $country,
                     'tags' => explode(';', $tags), 'custom_fields' => ['industry' => $industry], 'source' => 'seed',
+                    'permission_status' => 'unknown',
                 ]);
             }
         }

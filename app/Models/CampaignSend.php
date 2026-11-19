@@ -5,11 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class CampaignSend extends Model
 {
     protected $fillable = [
-        'campaign_id', 'contact_id', 'sender_id', 'status', 'message_id', 'queued_at', 'sent_at', 'failed_at', 'error',
+        'campaign_id', 'contact_id', 'status', 'message_id', 'queued_at', 'sent_at', 'failed_at', 'error',
         'opened_at', 'first_clicked_at', 'clicked_count', 'unsubscribed_at',
     ];
 
@@ -31,14 +32,14 @@ class CampaignSend extends Model
         return $this->belongsTo(Contact::class);
     }
 
-    public function sender(): BelongsTo
-    {
-        return $this->belongsTo(Sender::class);
-    }
-
     public function events(): HasMany
     {
         return $this->hasMany(Event::class);
+    }
+
+    public function sequenceEnrollment(): HasOne
+    {
+        return $this->hasOne(SequenceEnrollment::class);
     }
 
     public function log(string $type, array $payload = [], ?string $ip = null, ?string $userAgent = null): Event

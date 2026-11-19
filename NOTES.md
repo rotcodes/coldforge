@@ -363,3 +363,80 @@ Total                 48 tests · 320 assertions · 8.6s
 ### Operator
 - Delete the webhook in Hostinger → Agentic Mail → Webhooks (its URL now 404s; Hostinger would pause it anyway).
 - Only INBOX is polled. Replies that land in Spam are not picked up (set `INBOX_IMAP_FOLDER` or extend if this becomes a problem).
+
+## [2026-11-19 16:08] Setup — Restore the default test command
+
+### What
+- Removed the stale `tests/Unit` suite entry from `phpunit.xml`; the repository has no `tests/Unit` directory, so PHPUnit 11 stopped before running the existing feature suite.
+- `php artisan test` now discovers the maintained tests under `tests/Feature` without requiring an empty placeholder directory.
+
+## [2026-11-19 18:20] Step 1 — Hostinger mailbox and unified mail engine
+
+### What
+- Added a singleton encrypted Hostinger mailbox configuration with separate SMTP/IMAP tests, daily allowance, timezone, signatures, emergency pause, campaign tracking controls, physical address, and opt-in AI privacy controls.
+- Added full-folder IMAP discovery, historical/incremental UID synchronization, sync logs, normalized messages/recipients/attachments, Sent reconciliation, and two-way read/star/archive/trash actions.
+- Added the three-panel Mail workspace, compose/reply/forward, private attachments, drafts, scheduled/outbox views, cancellation, and retry.
+- Added one durable outbound engine for personal, test, campaign, and sequence messages with idempotency, rate limiting, retries, uncertain-delivery handling, allowance deferral, and IMAP Sent append.
+
+### Decisions
+- One mailbox powers the entire product; old provider/sender selection is no longer part of the live application.
+- Personal correspondence is never open/click tracked. Campaign tracking is configurable and warns that metrics are approximate.
+- HTML from synchronized messages is stored but the client currently renders plain text to avoid unsafe remote content.
+
+## [2026-11-19 18:45] Step 2 — Permission safeguards and follow-up sequences
+
+### What
+- Added explicit contact permission and lightweight pipeline states. Unknown imports remain ineligible until reviewed.
+- Added durable suppressions, one-click unsubscribe suppression, physical-address campaign enforcement, and immediate eligibility checks before every automated send.
+- Added reusable multi-step sequences with business-day timing, optional send windows, campaign enrollment, idempotent deliveries, sequence pause/cancel, and automatic advancement.
+- Incoming IMAP replies linked to an outgoing Message-ID mark the contact replied and permanently stop active follow-ups. Suppression, lost permission, campaign stop, permanent failure, and uncertain delivery also stop the enrollment.
+
+## [2026-11-19 19:05] Step 3 — Central Groq AI and legacy removal
+
+### What
+- Centralized Groq access behind one client with timeouts, retries, minimal payloads, redacted failures, JSON extraction, and application-level schema validation.
+- Reused the centralized client for industry suggestions and added opt-in email summaries, intent/sentiment/urgency classification, and suggested replies that require human review and never send automatically.
+- Removed live Brevo controllers/services/UI, old multi-sender code, webhook tests, and the legacy read-only inbox poller. Historical database migrations remain intact for upgrade compatibility.
+- Updated navigation, neutral dark styling, dashboard operational metrics, documentation, environment examples, and current TODOs.
+
+### Verification
+- Database migrations 000001 through 000005 ran successfully on local MariaDB. A failed first attempt at 000004 only created empty partial sequence tables; those exact tables were removed and the corrected short index name migrated cleanly.
+- `php artisan test`: 19 passed, 129 assertions; all SMTP/IMAP/Groq interactions are faked.
+- `npm run typecheck`: passed.
+- `npm run build`: passed (Vite production build).
+- No real email was sent and no live mailbox was synchronized during implementation.
+
+## [2026-11-19 19:30] Step 4 — Daily-use completion pass
+
+### What
+- Added secure, authenticated, on-demand remote attachment downloads with a 25 MB cap, private storage, filename containment, forced download, `nosniff`, and sandbox response headers.
+- Added Trash restore plus editing, rescheduling, cancellation, and retry for durable outgoing messages.
+- Added campaign cancellation, recipient delivery/permission/follow-up visibility, contact communication history, and explicit per-contact follow-up pause/resume/end controls.
+- Expanded Deliverability with MX verification, SMTP/IMAP health, ColdForge allowance usage, the suppression list, and failed/uncertain sending history.
+
+### Verification
+- Re-ran `php artisan test` (19 passed, 129 assertions), `npm run typecheck`, PHP lint on the new server files, and `npm run build`; all passed.
+
+## [2026-11-19 19:45] Fix — Primary button contrast
+
+### What
+- Replaced the light neutral `bg-brand` plus white-text combination with semantic `bg-primary text-primary-foreground` across buttons, logos, avatars, campaign indicators, and empty-state icons.
+- Removed the remaining purple login-page glow and checkbox accent so the authentication screen matches the neutral ColdForge 2.0 visual system.
+
+### Verification
+- `npm run typecheck`, `npm run build`, and `git diff --check` passed. The running Laravel server automatically serves the new Vite manifest after refresh.
+
+## [2026-11-19 20:15] Step 5 — Final intelligence, operations, and security pass
+
+### What
+- Added ColdForge Intelligence conversations with bounded read tools for unread mail, email search, campaigns, scheduled messages, pipeline contacts, and follow-up status. It treats retrieved email as untrusted data, records AI request/token/error history, rate-limits chat, and only creates an editable local draft after an explicit drafting request.
+- Expanded per-message AI assistance with classification confidence and reasoning, action items, recommended next action, and shorter/professional/friendly draft rewrites. AI remains opt-in and never sends.
+- Added mail-list multi-select actions, safe scanned attachment previews, CSV exports, Analytics, Activity, configurable retention pruning, hard/soft DSN parsing, explicit reply opt-outs, and automated sending-health pauses.
+- Bundled Monaco locally with only the editor/HTML contribution, removed the runtime CDN dependency, and changed the Inertia shell to load only the app entry so page chunks resolve reliably.
+- Added authenticated mutation auditing without request bodies or secrets. Updated Laravel to 12.73 and Symfony to patched 7.4 releases; Composer audit is clean. npm audit has only two low-severity transitive DOMPurify advisories inside Monaco; no moderate/high advisory remains.
+
+### Verification
+- Migration `2026_11_19_000006` ran successfully on the local database.
+- `php artisan test`: 22 passed, 146 assertions, including bounded Intelligence history, hard-bounce suppression/follow-up stop, new primary pages, and bulk mail selection.
+- `npm run typecheck`, `npm run build`, PHP lint, `git diff --check`, route listing, and scheduler listing passed.
+- No real email was sent, no live mailbox was synchronized, and production was not changed. Live Hostinger SMTP/IMAP acceptance and production ClamAV setup require operator credentials/configuration.

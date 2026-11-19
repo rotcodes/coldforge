@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, router } from '@inertiajs/react';
-import { Filter, MoreHorizontal, Pencil, Plus, Search, Trash2, Upload, Users } from 'lucide-react';
+import { Download, Filter, MoreHorizontal, Pencil, Plus, Search, Trash2, Upload, Users } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import { confirmDialog, visit } from '@/Components/ConfirmDialog';
 import PageHeader from '@/Components/PageHeader';
@@ -52,6 +52,7 @@ export default function ContactsIndex({ contacts, filters, tags, statuses, indus
 
     const hasFilters = !!(filters.q || filters.status || filters.tag || filters.industry || filters.source || filters.min_score || filters.has_email);
     const activeFilterCount = [filters.industry, filters.source, filters.min_score, filters.has_email].filter(Boolean).length;
+    const exportUrl = `/exports/contacts?${new URLSearchParams(Object.entries(filters).filter(([, value]) => value != null && value !== '') as [string, string][]).toString()}`;
 
     return (
         <AppLayout title="Contacts">
@@ -60,6 +61,7 @@ export default function ContactsIndex({ contacts, filters, tags, statuses, indus
                 description={`${contacts.total.toLocaleString()} contacts`}
                 actions={
                     <>
+                        <Button variant="outline" asChild><a href={exportUrl}><Download /> Export</a></Button>
                         <Button variant="outline" onClick={() => setImportOpen(true)}>
                             <Upload /> Import CSV
                         </Button>

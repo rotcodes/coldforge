@@ -3,6 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Models\Contact;
+use App\Models\Event;
+use App\Models\Industry;
+use App\Models\MailMessage;
+use App\Models\SequenceEnrollment;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -34,20 +38,23 @@ class ContactController extends Controller
             'filters' => $request->only('q', 'status', 'tag', 'industry', 'source', 'min_score', 'has_email'),
             'tags' => self::allTags(),
             'statuses' => Contact::STATUSES,
-            'industries' => \App\Models\Industry::where('is_active', true)->orderBy('label')->get(['slug', 'label']),
+            'permissionStatuses' => Contact::PERMISSION_STATUSES,
+            'industries' => Industry::where('is_active', true)->orderBy('label')->get(['slug', 'label']),
         ]);
     }
 
     public function show(Contact $contact)
     {
         $sends = $contact->sends()->with('campaign:id,name')->latest('id')->get();
-        $events = \App\Models\Event::whereIn('campaign_send_id', $sends->pluck('id'))
+        $events = Event::whereIn('campaign_send_id', $sends->pluck('id'))
             ->with('send.campaign:id,name')
             ->latest('id')->limit(100)->get();
         $tier = $contact->readinessTier();
-        $industry = $contact->industry_slug ? \App\Models\Industry::firstWhere('slug', $contact->industry_slug) : null;
+        $industry = $contact->industry_slug ? Industry::firstWhere('slug', $contact->industry_slug) : null;
+        $messages = MailMessage::where('contact_id', $contact->id)->with('recipients')->latest('message_at')->limit(100)->get();
+        $enrollments = SequenceEnrollment::where('contact_id', $contact->id)->with('sequence:id,name')->latest()->get();
 
-        return Inertia::render('Contacts/Show', compact('contact', 'sends', 'events', 'tier', 'industry'));
+        return Inertia::render('Contacts/Show', compact('contact', 'sends', 'events', 'tier', 'industry', 'messages', 'enrollments'));
     }
 
     public function store(Request $request)
@@ -71,6 +78,23 @@ class ContactController extends Controller
         return redirect('/contacts')->with('success', 'Contact deleted.');
     }
 
+    public function sequenceStatus(Request $request, Contact $contact, SequenceEnrollment $enrollment)
+    {
+        abort_unless($enrollment->contact_id === $contact->id, 404);
+        $data = $request->validate(['status' => ['required', 'in:active,paused,stopped']]);
+        if ($data['status'] === 'active') {
+            abort_unless($enrollment->status === 'paused', 422);
+            $enrollment->update(['status' => 'active', 'stop_reason' => null, 'stopped_at' => null]);
+        } elseif ($data['status'] === 'paused') {
+            abort_unless($enrollment->status === 'active', 422);
+            $enrollment->update(['status' => 'paused', 'stop_reason' => 'paused_by_administrator']);
+        } else {
+            $enrollment->update(['status' => 'stopped', 'stop_reason' => 'ended_by_administrator', 'stopped_at' => now(), 'next_send_at' => null]);
+        }
+
+        return back()->with('success', 'Contact follow-up status updated.');
+    }
+
     private function validated(Request $request, ?Contact $contact = null): array
     {
         $data = $request->validate([
@@ -89,6 +113,11 @@ class ContactController extends Controller
             'direct_phone' => ['nullable', 'string', 'max:50'],
             'main_phone' => ['nullable', 'string', 'max:50'],
             'status' => ['required', Rule::in(Contact::STATUSES)],
+            'pipeline_status' => ['required', Rule::in(['new', 'contacted', 'replied', 'interested', 'demo_requested', 'demo_scheduled', 'proposal_sent', 'negotiation', 'won', 'lost', 'not_interested'])],
+            'permission_status' => ['required', Rule::in(Contact::PERMISSION_STATUSES)],
+            'consent_source' => ['nullable', 'string', 'max:255'],
+            'consent_evidence' => ['nullable', 'string', 'max:2000'],
+            'notes' => ['nullable', 'string', 'max:5000'],
             'tags' => ['array'],
             'tags.*' => ['string', 'max:50'],
             'custom_fields' => ['nullable', 'array'],

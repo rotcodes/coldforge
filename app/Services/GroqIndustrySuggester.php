@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\Contact;
-use Illuminate\Support\Facades\Http;
+use App\Services\AI\GroqClient;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -16,15 +16,18 @@ use Illuminate\Support\Facades\Log;
  */
 class GroqIndustrySuggester
 {
-    private const ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
     // Groq's current large OSS model. Smaller/faster alternative: 'openai/gpt-oss-20b'.
     private const MODEL = 'openai/gpt-oss-120b';
+
     private const MAX_TEXTS = 150;
+
     private const TIMEOUT_SECONDS = 60;
+
+    public function __construct(private readonly GroqClient $groq) {}
 
     public function available(): bool
     {
-        return filled(config('services.groq.api_key'));
+        return $this->groq->available();
     }
 
     /** @return array<int, array{slug: string, label: string, aliases: string[], contact_count: int, workflows: string, tracking: string}> */
@@ -48,25 +51,11 @@ class GroqIndustrySuggester
 
         $payload = $this->buildPayload($texts);
 
-        try {
-            $response = Http::timeout(self::TIMEOUT_SECONDS)
-                ->withToken(config('services.groq.api_key'))
-                ->acceptJson()
-                ->asJson()
-                ->post(self::ENDPOINT, $payload);
-        } catch (\Throwable $e) {
-            Log::warning('Groq suggester network error', ['error' => $e->getMessage()]);
-
-            return [];
-        }
-
-        if (! $response->successful()) {
-            Log::warning('Groq suggester non-2xx', ['status' => $response->status(), 'body' => $response->body()]);
-
-            return [];
-        }
-
-        $content = $response->json('choices.0.message.content');
+        $content = $this->groq->complete($payload['messages'], $payload['model'], [
+            'temperature' => $payload['temperature'],
+            'max_tokens' => $payload['max_tokens'],
+            'reasoning_effort' => $payload['reasoning_effort'],
+        ]);
         if (! $content) {
             return [];
         }

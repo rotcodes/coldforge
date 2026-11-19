@@ -3,116 +3,87 @@
 namespace App\Jobs;
 
 use App\Models\CampaignSend;
+use App\Models\MailboxSetting;
+use App\Models\MailMessage;
+use App\Models\Suppression;
 use App\Services\EmailRenderer;
-use App\Services\Senders\SenderRegistry;
+use App\Services\Mailbox\OutboundMailService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Queue\Middleware\RateLimited;
-use RuntimeException;
-use Throwable;
 
+/** Prepares a campaign message, then hands delivery to the shared mailbox sending engine. */
 class SendEmailJob implements ShouldQueue
 {
     use Queueable;
 
-    /** Real failures (429/5xx/network) get 3 attempts; rate-limit releases don't count toward this. */
-    public int $maxExceptions = 3;
-
-    public array $backoff = [10, 60, 300];
-
     public function __construct(public CampaignSend $send) {}
 
-    public function retryUntil(): \DateTimeInterface
+    public function handle(OutboundMailService $outbound): void
     {
-        return now()->addHours(6);
-    }
-
-    public function middleware(): array
-    {
-        return [new RateLimited('sender')];
-    }
-
-    public function handle(): void
-    {
-        $send = $this->send->load('campaign.template', 'contact', 'sender');
+        $send = $this->send->load('campaign.template', 'contact');
         $campaign = $send->campaign;
+        $contact = $send->contact;
 
-        // Paused while waiting in the queue: put it back, ProcessCampaignJob picks it up on resume.
         if ($campaign->status !== 'running') {
-            $this->releaseQuota();
-            $send->update(['status' => 'queued', 'sender_id' => null]);
+            $send->update(['status' => 'queued']);
 
             return;
         }
-
         if ($send->status === 'sent') {
             return;
         }
+        if ($contact->status !== 'active' || ! in_array($contact->permission_status, ['consented', 'legitimate_interest'], true)) {
+            $this->failSend($send, 'Recipient is not eligible for campaign email.');
 
-        if ($send->contact->status !== 'active') {
-            $this->markFailed('Contact is '.$send->contact->status);
+            return;
+        }
+        if (Suppression::where('email', strtolower($contact->email))->exists()) {
+            $this->failSend($send, 'Recipient is on the suppression list.');
+
+            return;
+        }
+        if (! MailboxSetting::current()->configured()) {
+            $this->failSend($send, 'Hostinger mailbox is not configured.');
 
             return;
         }
 
-        if (! $send->sender) {
-            $this->markFailed('No sender assigned');
+        $existing = MailMessage::where('idempotency_key', 'campaign-send-'.$send->id)->first();
+        if ($existing) {
+            if (! in_array($existing->status, ['sent', 'uncertain'], true)) {
+                SendMailMessageJob::dispatch($existing);
+            }
 
             return;
         }
 
-        $mail = EmailRenderer::render($campaign->template, $send->contact, $send);
-        $template = $campaign->template;
-
-        $result = SenderRegistry::make($send->sender)->sendTransactional([
-            'from_name' => $template->from_name,
-            'from_email' => $template->from_email,
-            'reply_to' => $template->reply_to,
-            'to_email' => $send->contact->email,
-            'to_name' => trim($send->contact->first_name.' '.$send->contact->last_name) ?: null,
+        $mail = EmailRenderer::render($campaign->template, $contact, $send);
+        $message = $outbound->create([
             'subject' => $mail['subject'],
-            'html' => $mail['html'],
-            'text' => $mail['text'],
+            'html_body' => $mail['html'],
+            'plain_body' => $mail['text'],
+            'contact_id' => $contact->id,
+            'campaign_send_id' => $send->id,
+            'source_type' => 'campaign',
+            'source_id' => $campaign->id,
+            'idempotency_key' => 'campaign-send-'.$send->id,
             'headers' => [
                 'List-Unsubscribe' => '<'.$mail['unsubscribe_url'].'>',
                 'List-Unsubscribe-Post' => 'List-Unsubscribe=One-Click',
+                'X-ColdForge-Campaign' => (string) $campaign->id,
             ],
-            'tags' => ['campaign-'.$campaign->id],
-        ]);
+        ], [[
+            'type' => 'to',
+            'email' => $contact->email,
+            'name' => trim($contact->first_name.' '.$contact->last_name) ?: null,
+        ]], 'send');
 
-        if ($result->ok) {
-            $send->update(['status' => 'sent', 'sent_at' => now(), 'message_id' => $result->messageId, 'error' => null]);
-            $send->log('sent', ['message_id' => $result->messageId, 'sender' => $send->sender->name]);
-            $campaign->increment('sent_count');
-
-            return;
-        }
-
-        if ($result->retryable) {
-            throw new RuntimeException($result->error); // retried with backoff, failed() after 3
-        }
-
-        $this->markFailed($result->error);
+        SendMailMessageJob::dispatch($message);
     }
 
-    public function failed(?Throwable $e): void
+    private function failSend(CampaignSend $send, string $error): void
     {
-        $this->markFailed($e?->getMessage() ?? 'Unknown error');
-    }
-
-    private function markFailed(string $error): void
-    {
-        $this->releaseQuota();
-        $this->send->update(['status' => 'failed', 'failed_at' => now(), 'error' => $error]);
-        $this->send->log('failed', ['error' => $error]);
-    }
-
-    /** ProcessCampaignJob reserves quota up-front; give it back when nothing was sent. */
-    private function releaseQuota(): void
-    {
-        $sender = $this->send->sender;
-        if ($sender && $sender->sent_today > 0) {
-            $sender->decrement('sent_today');
-        }
+        $send->update(['status' => 'failed', 'failed_at' => now(), 'error' => $error]);
+        $send->log('failed', ['error' => $error]);
     }
 }

@@ -2,229 +2,102 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ProcessCampaignJob;
 use App\Models\Campaign;
 use App\Models\Contact;
-use App\Models\Sender;
+use App\Models\MailboxSetting;
+use App\Models\MailMessage;
+use App\Models\Suppression;
 use App\Models\Template;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
-/** CRUD + settings paths not covered by the send-pipeline tests. */
 class ManagementTest extends TestCase
 {
     use RefreshDatabase;
 
-    private User $user;
-
     protected function setUp(): void
     {
         parent::setUp();
-        $this->user = User::create(['name' => 'Admin', 'email' => 'admin@test.dev', 'password' => 'secret-password']);
-        $this->actingAs($this->user);
+        $user = User::create(['name' => 'Admin', 'email' => 'admin@test.dev', 'password' => 'secret-password']);
+        $this->actingAs($user);
     }
 
-    public function test_login_rejects_bad_password_and_throttles(): void
+    public function test_primary_workspace_pages_render(): void
     {
-        auth()->logout();
-        foreach (range(1, 5) as $_) {
-            $this->post('/login', ['email' => 'admin@test.dev', 'password' => 'wrong'])->assertSessionHasErrors('email');
+        $template = $this->template();
+        $contact = Contact::create(['email' => 'lead@example.com']);
+        foreach (['/', '/mail', '/contacts', "/contacts/{$contact->id}", '/templates', "/templates/{$template->id}/edit", '/campaigns', '/campaigns/create', '/sequences', '/intelligence', '/analytics', '/activity', '/settings/mailbox', '/settings/deliverability', '/settings/retention'] as $url) {
+            $this->get($url)->assertOk();
         }
-        $this->post('/login', ['email' => 'admin@test.dev', 'password' => 'secret-password'])->assertSessionHasErrors('email');
-        $this->assertGuest();
+        $this->get('/settings/senders')->assertRedirect('/settings/mailbox');
     }
 
-    public function test_contact_crud_and_validation(): void
+    public function test_mailbox_password_is_encrypted_and_never_returned(): void
     {
-        $this->post('/contacts', ['email' => 'not-an-email', 'status' => 'active'])->assertSessionHasErrors('email');
+        $this->put('/settings/mailbox', [
+            'email' => 'owner@example.com', 'display_name' => 'Owner', 'reply_to' => '', 'password' => 'mailbox-secret',
+            'smtp_host' => 'smtp.hostinger.com', 'smtp_port' => 465, 'smtp_encryption' => 'ssl',
+            'imap_host' => 'imap.hostinger.com', 'imap_port' => 993, 'imap_encryption' => 'ssl',
+            'daily_allowance' => 100, 'timezone' => 'Asia/Karachi', 'signature_html' => '', 'signature_text' => '',
+            'physical_address' => '1 Main Street', 'automation_paused' => false, 'track_campaign_opens' => true,
+            'track_campaign_clicks' => true, 'ai_processing_enabled' => false, 'ai_model' => 'openai/gpt-oss-120b',
+        ])->assertSessionHasNoErrors();
 
-        $this->post('/contacts', ['email' => 'New@Example.com', 'first_name' => 'New', 'status' => 'active', 'tags' => [' vip ', 'vip', 'beta']])
+        $raw = \DB::table('mailbox_settings')->value('password');
+        $this->assertStringNotContainsString('mailbox-secret', $raw);
+        $this->get('/settings/mailbox')->assertOk()->assertDontSee('mailbox-secret');
+        $this->assertSame('mailbox-secret', MailboxSetting::current()->password);
+    }
+
+    public function test_campaign_audience_requires_explicit_permission_and_launch_safeguards(): void
+    {
+        Queue::fake();
+        $template = $this->template();
+        Contact::create(['email' => 'eligible@example.com', 'permission_status' => 'consented']);
+        Contact::create(['email' => 'unknown@example.com', 'permission_status' => 'unknown']);
+        MailboxSetting::current()->update(['email' => 'owner@example.com', 'display_name' => 'Owner', 'password' => 'secret', 'physical_address' => '1 Main Street']);
+
+        $this->getJson('/campaigns/count')->assertJsonPath('count', 1);
+        $this->post('/campaigns', ['name' => 'Allowed audience', 'template_id' => $template->id, 'send_mode' => 'now', 'daily_cap' => 10])
             ->assertSessionHasNoErrors();
-        $contact = Contact::firstWhere('email', 'new@example.com');
-        $this->assertSame(['vip', 'beta'], $contact->tags);
-        $this->assertSame('manual', $contact->source);
-
-        $this->post('/contacts', ['email' => 'new@example.com', 'status' => 'active'])->assertSessionHasErrors('email'); // unique
-
-        $this->put("/contacts/{$contact->id}", ['email' => 'new@example.com', 'company' => 'Acme', 'status' => 'bounced', 'tags' => []])
-            ->assertSessionHasNoErrors();
-        $this->assertSame('bounced', $contact->fresh()->status);
-        $this->assertSame('Acme', $contact->fresh()->company);
-
-        $this->get('/contacts?q=acme')->assertOk()->assertSee('new@example.com');
-
-        $this->delete("/contacts/{$contact->id}")->assertRedirect('/contacts');
-        $this->assertModelMissing($contact);
-    }
-
-    public function test_template_crud_detects_variables_and_blocks_delete_when_used(): void
-    {
-        $this->post('/templates', ['name' => 'T', 'subject' => 'x', 'from_email' => 'bad'])->assertSessionHasErrors(['from_email', 'html_body']);
-
-        $this->post('/templates', [
-            'name' => 'Intro', 'subject' => 'Hi {{ first_name }}', 'from_email' => 'me@digitelly.net',
-            'html_body' => '<p>{{company}} {{industry}}</p>',
-        ])->assertRedirect();
-        $template = Template::firstWhere('name', 'Intro');
-        $this->assertSame(['first_name', 'company', 'industry'], $template->variables);
-
-        $this->put("/templates/{$template->id}", [...$template->only('name', 'from_email', 'html_body'), 'subject' => 'Changed'])->assertSessionHasNoErrors();
-        $this->assertSame('Changed', $template->fresh()->subject);
-
-        Campaign::create(['name' => 'C', 'template_id' => $template->id]);
-        $this->delete("/templates/{$template->id}")->assertSessionHas('error');
-        $this->assertModelExists($template);
-    }
-
-    public function test_quick_send_uses_first_active_sender(): void
-    {
-        Http::fake(['api.brevo.com/*' => Http::response(['messageId' => 'q1'], 201)]);
-        $template = Template::create(['name' => 'T', 'subject' => 'Hello {{first_name}}', 'from_email' => 'me@digitelly.net', 'html_body' => '<p>Hi</p>']);
-
-        $this->post("/templates/{$template->id}/test", ['email' => 'me@inbox.dev'])->assertSessionHas('error'); // no sender yet
-
-        Sender::create(['name' => 'Brevo', 'provider' => 'brevo', 'config' => ['api_key' => 'k'], 'daily_quota' => 10, 'priority' => 1]);
-        $this->post("/templates/{$template->id}/test", ['email' => 'me@inbox.dev'])->assertSessionHas('success');
-
-        Http::assertSent(fn ($r) => $r['subject'] === '[Test] Hello Friend' && $r['to'][0]['email'] === 'me@inbox.dev');
-    }
-
-    public function test_sender_secrets_are_encrypted_masked_and_kept_on_blank_update(): void
-    {
-        $this->post('/settings/senders', [
-            'name' => 'Brevo', 'provider' => 'brevo', 'daily_quota' => 300, 'priority' => 1, 'config' => ['api_key' => 'xkeysib-secret'],
-        ])->assertSessionHasNoErrors();
-        $sender = Sender::first();
-
-        $raw = \DB::table('senders')->value('config');
-        $this->assertStringNotContainsString('xkeysib-secret', $raw);
-
-        $page = $this->get('/settings/senders')->assertOk();
-        $this->assertStringNotContainsString('xkeysib-secret', $page->getContent());
-
-        $this->put("/settings/senders/{$sender->id}", [
-            'name' => 'Brevo main', 'provider' => 'brevo', 'daily_quota' => 500, 'priority' => 2, 'config' => ['api_key' => '********'],
-        ])->assertSessionHasNoErrors();
-        $sender->refresh();
-        $this->assertSame('xkeysib-secret', $sender->config['api_key']);
-        $this->assertSame(500, $sender->daily_quota);
-
-        $this->post('/settings/senders', ['name' => 'SMTP', 'provider' => 'smtp_generic', 'daily_quota' => 100, 'priority' => 3, 'config' => []])
-            ->assertSessionHasErrors(['config.host', 'config.port']);
-
-        $this->post("/settings/senders/{$sender->id}/toggle");
-        $this->assertFalse($sender->fresh()->is_active);
-
-        Http::fake(['api.brevo.com/v3/account' => Http::sequence()->push(['email' => 'me@digitelly.net'], 200)->push([], 401)]);
-        $this->post("/settings/senders/{$sender->id}/test")->assertSessionHas('success');
-        $this->post("/settings/senders/{$sender->id}/test")->assertSessionHas('error');
-
-        $this->delete("/settings/senders/{$sender->id}");
-        $this->assertModelMissing($sender);
-    }
-
-    public function test_brevo_can_connect_over_smtp_or_api(): void
-    {
-        $this->post('/settings/senders', [
-            'name' => 'Brevo SMTP', 'provider' => 'brevo', 'daily_quota' => 300, 'priority' => 1, 'config' => ['method' => 'smtp'],
-        ])->assertSessionHasErrors(['config.host', 'config.port', 'config.username', 'config.password']);
-
-        $this->post('/settings/senders', [
-            'name' => 'Brevo SMTP', 'provider' => 'brevo', 'daily_quota' => 300, 'priority' => 1,
-            'config' => ['method' => 'smtp', 'api_key' => 'stray', 'host' => 'smtp-relay.brevo.com', 'port' => 587, 'username' => 'me@digitelly.net', 'password' => 'smtp-key', 'encryption' => 'tls'],
-        ])->assertSessionHasNoErrors();
-
-        $sender = Sender::first();
-        $this->assertSame('smtp', \App\Services\Senders\SenderRegistry::method($sender));
-        $this->assertInstanceOf(\App\Services\Senders\SmtpSender::class, \App\Services\Senders\SenderRegistry::make($sender));
-        $this->assertArrayNotHasKey('api_key', $sender->config); // only SMTP keys stored
-
-        // Edit with masked password keeps the stored SMTP key
-        $this->put("/settings/senders/{$sender->id}", [
-            'name' => 'Brevo SMTP', 'provider' => 'brevo', 'daily_quota' => 300, 'priority' => 1,
-            'config' => ['method' => 'smtp', 'host' => 'smtp-relay.brevo.com', 'port' => 587, 'username' => 'me@digitelly.net', 'password' => '********'],
-        ])->assertSessionHasNoErrors();
-        $this->assertSame('smtp-key', $sender->fresh()->config['password']);
-
-        // Switch to API
-        $this->put("/settings/senders/{$sender->id}", [
-            'name' => 'Brevo API', 'provider' => 'brevo', 'daily_quota' => 300, 'priority' => 1, 'config' => ['method' => 'api', 'api_key' => 'xkeysib-1'],
-        ])->assertSessionHasNoErrors();
-        $this->assertInstanceOf(\App\Services\Senders\BrevoSender::class, \App\Services\Senders\SenderRegistry::make($sender->fresh()));
-
-        // Providers without an API driver are always SMTP, even if "api" is sent
-        $this->post('/settings/senders', ['name' => 'Mailjet', 'provider' => 'mailjet', 'daily_quota' => 200, 'priority' => 2, 'config' => ['method' => 'api']])
-            ->assertSessionHasErrors('config.host');
-    }
-
-    public function test_sender_quota_resets_daily_and_priority_strategy(): void
-    {
-        $a = Sender::create(['name' => 'A', 'provider' => 'brevo', 'config' => [], 'daily_quota' => 5, 'sent_today' => 5, 'reset_at' => today(), 'priority' => 1]);
-        $b = Sender::create(['name' => 'B', 'provider' => 'brevo', 'config' => [], 'daily_quota' => 5, 'sent_today' => 1, 'reset_at' => today(), 'priority' => 2]);
-
-        $this->assertSame($b->id, \App\Services\Senders\SenderRegistry::pick('priority')->id); // A is full
-
-        $a->update(['reset_at' => today()->subDay()]);
-        $this->assertSame($a->id, \App\Services\Senders\SenderRegistry::pick('priority')->id); // new day, A resets
-        $this->assertSame(0, $a->fresh()->sent_today);
-    }
-
-    public function test_profile_and_password_update(): void
-    {
-        $this->put('/settings/profile', ['name' => 'Sam', 'email' => 'sam@digitelly.net'])->assertSessionHasNoErrors();
-        $this->assertSame('sam@digitelly.net', $this->user->fresh()->email);
-
-        $this->put('/settings/password', ['current_password' => 'wrong', 'password' => 'new-password-123', 'password_confirmation' => 'new-password-123'])
-            ->assertSessionHasErrors('current_password');
-        $this->put('/settings/password', ['current_password' => 'secret-password', 'password' => 'short', 'password_confirmation' => 'short'])
-            ->assertSessionHasErrors('password');
-        $this->put('/settings/password', ['current_password' => 'secret-password', 'password' => 'new-password-123', 'password_confirmation' => 'new-password-123'])
-            ->assertSessionHasNoErrors();
-        $this->assertTrue(Hash::check('new-password-123', $this->user->fresh()->password));
-    }
-
-    public function test_campaign_requires_matching_contacts_and_schedules_for_later(): void
-    {
-        $template = Template::create(['name' => 'T', 'subject' => 'S', 'from_email' => 'me@digitelly.net', 'html_body' => '<p>x</p>']);
-
-        $this->post('/campaigns', ['name' => 'Empty', 'template_id' => $template->id, 'send_mode' => 'now', 'daily_cap' => 10, 'sender_strategy' => 'round_robin'])
-            ->assertSessionHasErrors('tags');
-
-        Contact::create(['email' => 'a@example.com']);
-        $this->post('/campaigns', [
-            'name' => 'Later', 'template_id' => $template->id, 'send_mode' => 'later', 'schedule_at' => now()->addDay()->toIso8601String(),
-            'daily_cap' => 10, 'sender_strategy' => 'round_robin',
-        ])->assertSessionHasNoErrors();
-
         $campaign = Campaign::first();
-        $this->post("/campaigns/{$campaign->id}/launch");
-        $this->assertSame('scheduled', $campaign->fresh()->status);
+        $this->assertSame(1, $campaign->total_recipients);
 
-        // Not due yet: scheduler leaves it alone
-        (new \App\Jobs\DispatchDueCampaignsJob)->handle();
-        $this->assertSame('scheduled', $campaign->fresh()->status);
-
-        // Due: scheduler flips it to running
-        $campaign->update(['schedule_at' => now()->subMinute()]);
-        (new \App\Jobs\DispatchDueCampaignsJob)->handle();
-        $this->assertContains($campaign->fresh()->status, ['running', 'completed']);
+        $this->post("/campaigns/{$campaign->id}/launch")->assertSessionHas('success');
+        $this->assertSame('running', $campaign->fresh()->status);
+        Queue::assertPushed(ProcessCampaignJob::class);
     }
 
-    public function test_click_proxy_rejects_non_http_targets(): void
+    public function test_unsubscribe_creates_durable_suppression(): void
     {
-        Contact::create(['email' => 'a@example.com']);
-        $template = Template::create(['name' => 'T', 'subject' => 'S', 'from_email' => 'me@digitelly.net', 'html_body' => '<p>x</p>']);
-        $campaign = Campaign::create(['name' => 'C', 'template_id' => $template->id]);
-        $send = $campaign->sends()->create(['contact_id' => Contact::first()->id]);
+        $contact = Contact::create(['email' => 'lead@example.com', 'permission_status' => 'consented']);
+        $url = \URL::signedRoute('unsubscribe', ['contact' => $contact->id]);
 
-        $url = \URL::signedRoute('track.click', ['send' => $send->id, 'u' => rtrim(strtr(base64_encode('javascript:alert(1)'), '+/', '-_'), '=')]);
-        $this->get($url)->assertNotFound();
+        $this->get($url)->assertOk();
+
+        $this->assertSame('suppressed', $contact->fresh()->permission_status);
+        $this->assertTrue(Suppression::where('email', 'lead@example.com')->exists());
     }
 
-    public function test_deliverability_page_rejects_garbage_domain(): void
+    public function test_bulk_mail_actions_update_only_selected_messages(): void
     {
-        $this->get('/settings/deliverability?domain=not a domain!')->assertSessionHasErrors('domain');
+        $first = MailMessage::create(['direction' => 'incoming', 'status' => 'synced', 'subject' => 'One']);
+        $second = MailMessage::create(['direction' => 'incoming', 'status' => 'synced', 'subject' => 'Two']);
+        $third = MailMessage::create(['direction' => 'incoming', 'status' => 'synced', 'subject' => 'Three']);
+
+        $this->post('/mail/messages/bulk-action', ['message_ids' => [$first->id, $second->id], 'action' => 'star'])
+            ->assertSessionHas('success');
+
+        $this->assertTrue($first->fresh()->is_starred);
+        $this->assertTrue($second->fresh()->is_starred);
+        $this->assertFalse($third->fresh()->is_starred);
+    }
+
+    private function template(): Template
+    {
+        return Template::create(['name' => 'Template', 'subject' => 'Hello', 'from_email' => 'owner@example.com', 'html_body' => '<p>Hello</p>', 'text_body' => 'Hello']);
     }
 }

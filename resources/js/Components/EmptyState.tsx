@@ -3,7 +3,7 @@ import type { LucideIcon } from 'lucide-react';
 export default function EmptyState({ icon: Icon, title, text, action }: { icon: LucideIcon; title: string; text: string; action?: React.ReactNode }) {
     return (
         <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
-            <div className="mb-4 grid size-12 place-items-center rounded-xl bg-brand text-white shadow-glow">
+            <div className="mb-4 grid size-12 place-items-center rounded-xl bg-primary text-primary-foreground shadow-glow">
                 <Icon className="size-5" />
             </div>
             <h3 className="font-medium">{title}</h3>

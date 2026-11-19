@@ -9,7 +9,7 @@ import { Input } from '@/Components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/Components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/Components/ui/tabs';
 import { Textarea } from '@/Components/ui/textarea';
-import type { Contact, ContactStatus, Industry } from '@/types';
+import type { Contact, ContactStatus, Industry, PermissionStatus, PipelineStatus } from '@/types';
 
 const blank = {
     email: '', first_name: '', last_name: '', company: '', country: '',
@@ -17,7 +17,8 @@ const blank = {
     city_state: '', website: '',
     decision_maker: '', dm_role: '', direct_phone: '', main_phone: '',
     personalized_opener: '', pain_evidence: '', recommended_offer: '',
-    status: 'active' as ContactStatus, tags: [] as string[],
+    status: 'active' as ContactStatus, pipeline_status: 'new' as PipelineStatus, permission_status: 'unknown' as PermissionStatus,
+    consent_source: '', consent_evidence: '', notes: '', tags: [] as string[],
 };
 
 export default function ContactDialog({
@@ -54,6 +55,11 @@ export default function ContactDialog({
             pain_evidence: contact.pain_evidence ?? '',
             recommended_offer: contact.recommended_offer ?? '',
             status: contact.status,
+            pipeline_status: contact.pipeline_status,
+            permission_status: contact.permission_status,
+            consent_source: contact.consent_source ?? '',
+            consent_evidence: contact.consent_evidence ?? '',
+            notes: contact.notes ?? '',
             tags: contact.tags ?? [],
         } : blank);
     }, [open, contact]);
@@ -104,7 +110,8 @@ export default function ContactDialog({
                                 {text('industry', 'Industry (raw text)')}
                                 {text('website', 'Website')}
                             </div>
-                            <Field label="Status" error={form.errors.status}>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                            <Field label="Contact status" error={form.errors.status}>
                                 <Select value={form.data.status} onValueChange={(v) => form.setData('status', v as ContactStatus)}>
                                     <SelectTrigger><SelectValue /></SelectTrigger>
                                     <SelectContent>
@@ -114,6 +121,21 @@ export default function ContactDialog({
                                     </SelectContent>
                                 </Select>
                             </Field>
+                            <Field label="Pipeline stage" error={form.errors.pipeline_status}>
+                                <Select value={form.data.pipeline_status} onValueChange={(v) => form.setData('pipeline_status', v as PipelineStatus)}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent>{['new','contacted','replied','interested','demo_requested','demo_scheduled','proposal_sent','negotiation','won','lost','not_interested'].map((s) => <SelectItem key={s} value={s}>{s.replaceAll('_', ' ')}</SelectItem>)}</SelectContent>
+                                </Select>
+                            </Field>
+                            </div>
+                            <Field label="Campaign permission" error={form.errors.permission_status} hint="Unknown contacts are excluded from campaigns until explicitly reviewed.">
+                                <Select value={form.data.permission_status} onValueChange={(v) => form.setData('permission_status', v as PermissionStatus)}>
+                                    <SelectTrigger><SelectValue /></SelectTrigger>
+                                    <SelectContent><SelectItem value="unknown">Unknown · not eligible</SelectItem><SelectItem value="consented">Consented</SelectItem><SelectItem value="legitimate_interest">Legitimate interest</SelectItem><SelectItem value="suppressed">Suppressed</SelectItem></SelectContent>
+                                </Select>
+                            </Field>
+                            {form.data.permission_status !== 'unknown' && <div className="grid gap-4 sm:grid-cols-2">{text('consent_source', 'Permission source')}<Field label="Permission evidence" htmlFor="c-consent" error={form.errors.consent_evidence}><Textarea id="c-consent" rows={2} value={form.data.consent_evidence} onChange={(e) => form.setData('consent_evidence', e.target.value)} /></Field></div>}
+                            <Field label="Notes" htmlFor="c-notes" error={form.errors.notes}><Textarea id="c-notes" rows={3} value={form.data.notes} onChange={(e) => form.setData('notes', e.target.value)} /></Field>
                             <Field label="Tags" error={form.errors.tags}>
                                 <TagInput value={form.data.tags} onChange={(t) => form.setData('tags', t)} suggestions={tags} />
                             </Field>

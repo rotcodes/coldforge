@@ -3,7 +3,6 @@ export interface User {
     name: string;
     email: string;
 }
-
 export type PageProps<T extends Record<string, unknown> = Record<string, unknown>> = T & {
     auth: { user: User | null };
     flash: { success?: string | null; error?: string | null };
@@ -20,7 +19,9 @@ export interface Paginated<T> {
     next_page_url: string | null;
 }
 
-export type ContactStatus = 'active' | 'bounced' | 'unsubscribed' | 'complained';
+export type ContactStatus = 'active' | 'replied' | 'bounced' | 'unsubscribed' | 'complained';
+export type PermissionStatus = 'unknown' | 'consented' | 'legitimate_interest' | 'suppressed';
+export type PipelineStatus = 'new' | 'contacted' | 'replied' | 'interested' | 'demo_requested' | 'demo_scheduled' | 'proposal_sent' | 'negotiation' | 'won' | 'lost' | 'not_interested';
 
 export interface Contact {
     id: number;
@@ -55,6 +56,15 @@ export interface Contact {
     other_emails: string | null;
     custom_fields: Record<string, string> | null;
     status: ContactStatus;
+    permission_status: PermissionStatus;
+    pipeline_status: PipelineStatus;
+    consent_source: string | null;
+    consent_evidence: string | null;
+    notes: string | null;
+    last_contacted_at: string | null;
+    last_replied_at: string | null;
+    next_interaction_at: string | null;
+    ai_summary: string | null;
     source: string;
     tags: string[] | null;
     created_at: string;
@@ -93,7 +103,7 @@ export interface Campaign {
     name: string;
     template_id: number;
     template?: { id: number; name: string; subject?: string };
-    sender_strategy: 'round_robin' | 'priority';
+    sender_strategy: string;
     contact_filter: { tags?: string[] } | null;
     schedule_at: string | null;
     status: CampaignStatus;
@@ -105,15 +115,4 @@ export interface Campaign {
     bounced_count: number;
     unsubscribed_count: number;
     created_at: string;
-}
-
-export interface Sender {
-    id: number;
-    name: string;
-    provider: 'brevo' | 'mailersend' | 'elastic' | 'mailjet' | 'smtp_generic';
-    config: Record<string, string | number>;
-    daily_quota: number;
-    sent_today: number;
-    is_active: boolean;
-    priority: number;
 }
