@@ -4,6 +4,7 @@ import { Link, router } from '@inertiajs/react';
 import { AlertTriangle, Archive, ChevronLeft, Copy, FileText, Forward, Inbox, Loader2, Mail, MailOpen, PenLine, RefreshCw, Reply, Search, Send, Sparkles, Star, Trash2 } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import EmptyState from '@/Components/EmptyState';
+import EmailHtml from '@/Components/EmailHtml';
 import { Button } from '@/Components/ui/button';
 import { Input } from '@/Components/ui/input';
 import { cn, dateTime, fmt } from '@/lib/utils';
@@ -32,6 +33,7 @@ type Message = {
     from_name: string | null;
     subject: string | null;
     plain_body: string | null;
+    html_body: string | null;
     readable_body: string | null;
     is_read: boolean;
     is_starred: boolean;
@@ -255,7 +257,9 @@ export default function MailIndex({ folders, views, activeFolder, activeView, me
                                             </div>
                                             <time className="shrink-0 text-[11px] text-muted-foreground">{message.message_at ? dateTime(message.message_at) : ''}</time>
                                         </div>
-                                        <div className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground/90">{message.readable_body || 'This message has no readable body.'}</div>
+                                        {message.html_body
+                                            ? <EmailHtml html={message.html_body} subject={message.subject} />
+                                            : <div className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground/90">{message.readable_body || 'This message has no readable body.'}</div>}
                                         {!!message.attachments?.length && (
                                             <div className="mt-5 flex flex-wrap gap-2">{message.attachments.map((attachment) => <div key={attachment.id} className="flex items-center overflow-hidden rounded-md border text-xs text-muted-foreground"><a href={`/mail/attachments/${attachment.id}/download`} className="px-2.5 py-1.5 transition-colors hover:bg-accent hover:text-foreground">{attachment.filename} · {fmt(attachment.size_bytes)} B</a>{(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf', 'text/plain', 'text/csv'].includes(attachment.mime_type ?? '')) && <a href={`/mail/attachments/${attachment.id}/preview`} target="_blank" rel="noreferrer" className="border-l px-2.5 py-1.5 transition-colors hover:bg-accent hover:text-foreground">Preview</a>}</div>)}</div>
                                         )}

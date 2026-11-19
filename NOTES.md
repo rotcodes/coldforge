@@ -470,3 +470,14 @@ Total                 48 tests · 320 assertions · 8.6s
 ### Verification
 - Confirmed the affected production messages contain HTML bodies of roughly 700 bytes and empty plain-text bodies.
 - `php artisan test` passed with 23 tests and 160 assertions, including a regression test for HTML-only mail with script/style content. TypeScript checking, PHP lint, `git diff --check`, and the Vite production build also passed.
+
+## [2026-11-19 21:35] Fix — Preserve original HTML email formatting
+
+### What
+- Added a dedicated sandboxed HTML email viewer so synchronized messages preserve their original paragraphs, spacing, tables, inline styles, links, typography, and white email canvas instead of displaying only the derived plain text.
+- Sanitized message markup with DOMPurify and an iframe Content Security Policy. Scripts, forms, embedded frames, objects, media, and referrers are blocked; links open separately with safe relationship attributes.
+- Remote images remain blocked by default to avoid triggering tracking pixels. Messages containing them show an explicit `Show images` control that enables the original remote imagery on demand.
+- Retained the plain-text conversion as the safe fallback for text-only messages, list previews, search, and malformed/empty HTML.
+
+### Verification
+- `php artisan test` passed with 23 tests and 160 assertions. TypeScript checking, `git diff --check`, and the Vite production build also passed.
