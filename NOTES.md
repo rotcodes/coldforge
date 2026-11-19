@@ -459,3 +459,14 @@ Total                 48 tests · 320 assertions · 8.6s
 - Production login and Vite asset returned HTTP 200; the unauthenticated root correctly redirected with HTTP 302.
 - All migrations ran, the live checkout was clean, queue jobs drained to zero with no failed jobs, scheduler and queue smoke runs passed, and no recent Laravel errors were present.
 - The preserved Groq credential returned HTTP 200 from the Groq models endpoint. The new mailbox intentionally remains unconfigured until the operator enters Hostinger SMTP/IMAP credentials in Settings.
+
+## [2026-11-19 21:20] Fix — Read HTML-only mailbox messages
+
+### What
+- Added a safe server-side HTML-to-text fallback for IMAP messages that do not include a `text/plain` MIME part.
+- Mail previews and message details now use the readable fallback, while scripts, styles, hidden document content, and raw remote HTML are not rendered.
+- Future mailbox synchronizations also persist the derived plain-text body so HTML-only mail remains searchable.
+
+### Verification
+- Confirmed the affected production messages contain HTML bodies of roughly 700 bytes and empty plain-text bodies.
+- `php artisan test` passed with 23 tests and 160 assertions, including a regression test for HTML-only mail with script/style content. TypeScript checking, PHP lint, `git diff --check`, and the Vite production build also passed.

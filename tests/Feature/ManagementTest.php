@@ -12,6 +12,7 @@ use App\Models\Template;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 class ManagementTest extends TestCase
@@ -94,6 +95,23 @@ class ManagementTest extends TestCase
         $this->assertTrue($first->fresh()->is_starred);
         $this->assertTrue($second->fresh()->is_starred);
         $this->assertFalse($third->fresh()->is_starred);
+    }
+
+    public function test_html_only_mail_has_a_safe_readable_body(): void
+    {
+        $message = MailMessage::create([
+            'direction' => 'incoming',
+            'status' => 'synced',
+            'subject' => 'HTML only',
+            'html_body' => '<style>.hidden{display:none}</style><p>Hello&nbsp;<strong>Sam</strong>,</p><script>alert(1)</script><div>Can we talk tomorrow?</div>',
+        ]);
+
+        $this->assertSame("Hello Sam,\nCan we talk tomorrow?", $message->readable_body);
+        $this->get("/mail?id={$message->id}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('selected.readable_body', "Hello Sam,\nCan we talk tomorrow?")
+                ->where('messages.data.0.readable_body', "Hello Sam,\nCan we talk tomorrow?"));
     }
 
     private function template(): Template

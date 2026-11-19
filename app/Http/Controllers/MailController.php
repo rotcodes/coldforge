@@ -52,13 +52,16 @@ class MailController extends Controller
             ->latest('message_at');
 
         $messages = $query->paginate(40)->withQueryString();
+        $messages->getCollection()->each->append('readable_body');
         $selected = $request->filled('id')
             ? MailMessage::with(['recipients', 'attachments', 'contact:id,email,business,company,first_name,last_name,pipeline_status'])->find($request->integer('id'))
             : $messages->first();
+        $selected?->append('readable_body');
 
         $thread = $selected?->thread_key
             ? MailMessage::with('recipients')->where('thread_key', $selected->thread_key)->oldest('message_at')->get()
             : collect();
+        $thread->each->append('readable_body');
 
         return Inertia::render('Mail/Index', [
             'folders' => $folders,

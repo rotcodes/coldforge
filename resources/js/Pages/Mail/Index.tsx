@@ -32,6 +32,7 @@ type Message = {
     from_name: string | null;
     subject: string | null;
     plain_body: string | null;
+    readable_body: string | null;
     is_read: boolean;
     is_starred: boolean;
     attachment_count: number;
@@ -201,7 +202,7 @@ export default function MailIndex({ folders, views, activeFolder, activeView, me
                                         <span className="shrink-0 text-[10px] text-muted-foreground">{message.message_at ? new Date(message.message_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}</span>
                                     </div>
                                     <div className={cn('mt-1 truncate text-xs', !message.is_read ? 'text-foreground' : 'text-muted-foreground')}>{message.subject || '(no subject)'}</div>
-                                    <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">{message.plain_body?.replace(/\s+/g, ' ') || 'No text preview'}</div>
+                                    <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">{message.readable_body?.replace(/\s+/g, ' ') || 'No text preview'}</div>
                                     </Link>
                                 </div>
                             ))}
@@ -254,7 +255,7 @@ export default function MailIndex({ folders, views, activeFolder, activeView, me
                                             </div>
                                             <time className="shrink-0 text-[11px] text-muted-foreground">{message.message_at ? dateTime(message.message_at) : ''}</time>
                                         </div>
-                                        <div className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground/90">{message.plain_body || 'This message has no plain-text body.'}</div>
+                                        <div className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground/90">{message.readable_body || 'This message has no readable body.'}</div>
                                         {!!message.attachments?.length && (
                                             <div className="mt-5 flex flex-wrap gap-2">{message.attachments.map((attachment) => <div key={attachment.id} className="flex items-center overflow-hidden rounded-md border text-xs text-muted-foreground"><a href={`/mail/attachments/${attachment.id}/download`} className="px-2.5 py-1.5 transition-colors hover:bg-accent hover:text-foreground">{attachment.filename} · {fmt(attachment.size_bytes)} B</a>{(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf', 'text/plain', 'text/csv'].includes(attachment.mime_type ?? '')) && <a href={`/mail/attachments/${attachment.id}/preview`} target="_blank" rel="noreferrer" className="border-l px-2.5 py-1.5 transition-colors hover:bg-accent hover:text-foreground">Preview</a>}</div>)}</div>
                                         )}

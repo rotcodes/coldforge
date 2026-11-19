@@ -185,6 +185,8 @@ class MailboxSynchronizer
         $fromEmail = $from instanceof Address ? strtolower($from->mail) : null;
         $direction = in_array($folder->special_use, ['sent', 'drafts', 'outbox'], true) ? 'outgoing' : 'incoming';
         $contactEmail = $direction === 'incoming' ? $fromEmail : null;
+        $htmlBody = $message->getHTMLBody() ?: null;
+        $plainBody = $message->getTextBody() ?: MailMessage::htmlToPlainText($htmlBody);
 
         return [
             'contact_id' => $contactEmail ? Contact::where('email', $contactEmail)->value('id') : null,
@@ -197,8 +199,8 @@ class MailboxSynchronizer
             'from_email' => $fromEmail,
             'from_name' => $from instanceof Address ? ($from->personal ?: null) : null,
             'subject' => mb_substr((string) ($message->getSubject()->first() ?: '(no subject)'), 0, 255),
-            'plain_body' => $message->getTextBody() ?: null,
-            'html_body' => $message->getHTMLBody() ?: null,
+            'plain_body' => $plainBody,
+            'html_body' => $htmlBody,
             'flags' => $flags,
             'is_read' => in_array('seen', $flags, true) || in_array('\\seen', $flags, true),
             'is_starred' => in_array('flagged', $flags, true) || in_array('\\flagged', $flags, true),
