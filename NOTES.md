@@ -446,3 +446,16 @@ Total                 48 tests · 320 assertions · 8.6s
 ### What
 - Added a final migration that removes the obsolete `senders`, `webhook_events`, and `inbox_messages` tables after the retained historical migrations run.
 - This keeps upgrades reproducible while ensuring a fresh ColdForge 2.0 database contains no legacy provider or inbox tables.
+
+## [2026-11-19 20:55] Production deployment — ColdForge 2.0
+
+### What
+- Merged PR #1, deployed GitHub `main` to `/home/u105894521/coldforge-app`, and retained the existing hPanel scheduler and database-queue cron jobs.
+- Preserved the production `.env`, APP_KEY, database credentials, and Groq key. Wiped only the tables inside `u105894521_coldforge`, then ran fresh migrations and the production seeder; the database now has 33 current tables, no legacy provider tables, and no old contacts or campaigns.
+- Replaced the copied public document root at `domains/digitelly.net/public_html/mail`, normalized public directories to `0755` and files to `0644`, and kept application writable directories group-writable.
+- Removed the old live application/public copies after successful activation. A verified recovery set remains at `/home/u105894521/backups/coldforge-pre2-20261119T143638Z` with source/public archives, the original 20-table SQL dump, production environment, and SHA-256 manifest.
+
+### Verification
+- Production login and Vite asset returned HTTP 200; the unauthenticated root correctly redirected with HTTP 302.
+- All migrations ran, the live checkout was clean, queue jobs drained to zero with no failed jobs, scheduler and queue smoke runs passed, and no recent Laravel errors were present.
+- The preserved Groq credential returned HTTP 200 from the Groq models endpoint. The new mailbox intentionally remains unconfigured until the operator enters Hostinger SMTP/IMAP credentials in Settings.
