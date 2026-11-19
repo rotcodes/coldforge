@@ -440,3 +440,9 @@ Total                 48 tests · 320 assertions · 8.6s
 - `php artisan test`: 22 passed, 146 assertions, including bounded Intelligence history, hard-bounce suppression/follow-up stop, new primary pages, and bulk mail selection.
 - `npm run typecheck`, `npm run build`, PHP lint, `git diff --check`, route listing, and scheduler listing passed.
 - No real email was sent, no live mailbox was synchronized, and production was not changed. Live Hostinger SMTP/IMAP acceptance and production ClamAV setup require operator credentials/configuration.
+
+## [2026-11-19 20:35] Deployment cleanup — Remove legacy provider tables
+
+### What
+- Added a final migration that removes the obsolete `senders`, `webhook_events`, and `inbox_messages` tables after the retained historical migrations run.
+- This keeps upgrades reproducible while ensuring a fresh ColdForge 2.0 database contains no legacy provider or inbox tables.
