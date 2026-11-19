@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\Campaign;
 use App\Models\CampaignSend;
 use App\Models\Contact;
+use App\Models\MailboxSetting;
+use App\Models\MailMessage;
+use App\Models\SequenceEnrollment;
 use App\Models\Template;
 use Illuminate\Support\Carbon;
 use Inertia\Inertia;
@@ -13,6 +16,7 @@ class DashboardController extends Controller
 {
     public function __invoke()
     {
+        $mailbox = MailboxSetting::current()->refreshAllowance();
         $sent = $this->daily('sent_at');
         $bounced = $this->daily('sent_at', fn ($q) => $q->where('status', 'bounced'));
         $opens = $this->daily('opened_at');
@@ -37,6 +41,14 @@ class DashboardController extends Controller
             'templates' => Template::orderBy('name')->get(['id', 'name']),
             'contactCount' => Contact::where('status', 'active')->count(),
             'readiness' => $this->readiness(),
+            'operations' => [
+                'unread' => MailMessage::where('direction', 'incoming')->where('is_read', false)->count(),
+                'scheduled' => MailMessage::where('status', 'scheduled')->count(),
+                'followUps' => SequenceEnrollment::where('status', 'active')->count(),
+                'allowanceRemaining' => max(0, $mailbox->daily_allowance - $mailbox->sent_today),
+                'automationPaused' => $mailbox->automation_paused,
+                'mailboxConfigured' => $mailbox->configured(),
+            ],
         ]);
     }
 

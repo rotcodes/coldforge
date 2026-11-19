@@ -2,11 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Jobs\ImportContactsJob;
 use App\Models\Contact;
-use App\Models\CsvImport;
 use App\Models\Industry;
-use App\Models\Sender;
 use App\Models\Template;
 use App\Models\User;
 use App\Services\CsvHeaderMapper;
@@ -109,9 +106,9 @@ class PersonalizationTest extends TestCase
     {
         // Start from a clean contact set so the sample_contacts.csv seed doesn't skew counts.
         Contact::query()->delete();
-        Contact::create(['email' => 'a@b.co', 'industry_slug' => 'equipment_dealer', 'source_system' => 'INTEL', 'lead_score' => 90]);
-        Contact::create(['email' => 'c@d.co', 'industry_slug' => 'warehouse', 'source_system' => 'CRM', 'lead_score' => 60]);
-        Contact::create(['email' => 'e@f.co']);
+        Contact::create(['email' => 'a@b.co', 'industry_slug' => 'equipment_dealer', 'source_system' => 'INTEL', 'lead_score' => 90, 'permission_status' => 'consented']);
+        Contact::create(['email' => 'c@d.co', 'industry_slug' => 'warehouse', 'source_system' => 'CRM', 'lead_score' => 60, 'permission_status' => 'consented']);
+        Contact::create(['email' => 'e@f.co', 'permission_status' => 'consented']);
 
         $this->assertSame(1, Contact::matchingFilter(['industry_slugs' => ['equipment_dealer']])->count());
         $this->assertSame(1, Contact::matchingFilter(['source_system' => 'CRM'])->count());

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\TemplateFallbacks;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,6 +13,8 @@ class Contact extends Model
     use HasFactory;
 
     public const STATUSES = ['active', 'replied', 'bounced', 'unsubscribed', 'complained'];
+
+    public const PERMISSION_STATUSES = ['unknown', 'consented', 'legitimate_interest', 'suppressed'];
 
     public const CORE_FIELDS = ['email', 'first_name', 'last_name', 'company', 'country'];
 
@@ -35,11 +38,16 @@ class Contact extends Model
         'personalized_opener', 'pain_evidence', 'recommended_offer',
         'custom_subject', 'why_now_trigger', 'notion_url', 'other_emails',
         'custom_fields', 'status', 'source', 'tags',
+        'pipeline_status', 'permission_status', 'consent_source', 'consent_evidence', 'notes',
+        'last_contacted_at', 'last_replied_at', 'next_interaction_at', 'ai_summary',
     ];
 
     protected function casts(): array
     {
-        return ['custom_fields' => 'array', 'tags' => 'array', 'lead_score' => 'integer'];
+        return [
+            'custom_fields' => 'array', 'tags' => 'array', 'lead_score' => 'integer',
+            'last_contacted_at' => 'datetime', 'last_replied_at' => 'datetime', 'next_interaction_at' => 'datetime',
+        ];
     }
 
     public function sends(): HasMany
@@ -63,8 +71,14 @@ class Contact extends Model
     public function scopeMatchingFilter(Builder $query, ?array $filter): Builder
     {
         return $query->where('status', 'active')
+            ->whereIn('permission_status', ['consented', 'legitimate_interest'])
             ->whereNotNull('email')
             ->where('email', '!=', '')
+            ->whereNotExists(function ($suppression) {
+                $suppression->selectRaw('1')
+                    ->from('suppressions')
+                    ->whereColumn('suppressions.email', 'contacts.email');
+            })
             ->withAnyTag($filter['tags'] ?? [])
             ->when(! empty($filter['industry_slugs']), fn ($q) => $q->whereIn('industry_slug', $filter['industry_slugs']))
             ->when(! empty($filter['source_system']), fn ($q) => $q->where('source_system', $filter['source_system']))
@@ -99,8 +113,8 @@ class Contact extends Model
      */
     public function templateVars(): array
     {
-        $fallbacks = \App\Services\TemplateFallbacks::all();
-        $industry = $this->industry_slug ? \App\Models\Industry::where('slug', $this->industry_slug)->first() : null;
+        $fallbacks = TemplateFallbacks::all();
+        $industry = $this->industry_slug ? Industry::where('slug', $this->industry_slug)->first() : null;
 
         $vars = array_merge($this->custom_fields ?? [], [
             // Core

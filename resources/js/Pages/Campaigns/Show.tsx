@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Link, router, useForm } from '@inertiajs/react';
-import { Activity, CalendarClock, Gauge, Loader2, Pause, Play, Rocket, Trash2 } from 'lucide-react';
+import { Activity, CalendarClock, Download, Gauge, Loader2, Pause, Play, Rocket, Trash2, XCircle } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import { confirmDialog, visit } from '@/Components/ConfirmDialog';
 import StatusBadge from '@/Components/StatusBadge';
@@ -9,7 +9,7 @@ import { Button } from '@/Components/ui/button';
 import { Card } from '@/Components/ui/card';
 import { Progress } from '@/Components/ui/progress';
 import { dateTime, fmt, pct } from '@/lib/utils';
-import type { Campaign } from '@/types';
+import type { Campaign, Paginated } from '@/types';
 
 interface FeedEvent {
     id: number;
@@ -20,7 +20,9 @@ interface FeedEvent {
     email: string;
 }
 
-export default function CampaignShow({ campaign, breakdown, events }: { campaign: Campaign; breakdown: Record<string, number>; events: FeedEvent[] }) {
+type Recipient = { id: number; status: string; sent_at: string | null; failed_at: string | null; error: string | null; contact: { id: number; email: string; first_name: string | null; last_name: string | null; permission_status: string; pipeline_status: string; last_replied_at: string | null }; sequence_enrollment: { status: string; next_step_position: number; next_send_at: string | null; stop_reason: string | null } | null };
+
+export default function CampaignShow({ campaign, breakdown, events, recipients }: { campaign: Campaign; breakdown: Record<string, number>; events: FeedEvent[]; recipients: Paginated<Recipient> }) {
     const action = useForm({});
     const live = campaign.status === 'running' || campaign.status === 'scheduled';
 
@@ -57,6 +59,7 @@ export default function CampaignShow({ campaign, breakdown, events }: { campaign
                     </p>
                 </div>
                 <div className="flex gap-2">
+                    <Button variant="outline" asChild><a href={`/exports/campaigns/${campaign.id}`}><Download /> Export</a></Button>
                     {campaign.status === 'draft' && (
                         <Button onClick={() => post('launch')} disabled={action.processing}>
                             {action.processing ? <Loader2 className="animate-spin" /> : <Rocket />} Launch
@@ -72,6 +75,7 @@ export default function CampaignShow({ campaign, breakdown, events }: { campaign
                             <Play /> Resume
                         </Button>
                     )}
+                    {['draft', 'scheduled', 'running', 'paused'].includes(campaign.status) && <Button variant="outline" onClick={() => confirmDialog({ title: 'Cancel campaign?', description: 'Pending campaign emails and active follow-ups will be stopped. Sent messages remain in history.', onConfirm: () => post('cancel') })}><XCircle /> Cancel</Button>}
                     {campaign.status !== 'running' && (
                         <Button variant="outline" aria-label="Delete campaign" onClick={() => confirmDialog({ title: 'Delete campaign?', description: `"${campaign.name}" and its full send history will be permanently removed.`, onConfirm: visit((o) => router.delete(`/campaigns/${campaign.id}`, o)) })}>
                             <Trash2 className="text-red-500" />
@@ -117,10 +121,7 @@ export default function CampaignShow({ campaign, breakdown, events }: { campaign
                             <span>Daily cap</span>
                             <span className="font-mono text-foreground">{fmt(campaign.daily_cap)}/day</span>
                         </div>
-                        <div className="flex justify-between">
-                            <span>Strategy</span>
-                            <span className="text-foreground">{campaign.sender_strategy === 'priority' ? 'Priority' : 'Round robin'}</span>
-                        </div>
+                        <div className="flex justify-between"><span>Mailbox</span><span className="text-foreground">Hostinger</span></div>
                         {campaign.schedule_at && (
                             <div className="flex justify-between">
                                 <span className="flex items-center gap-1">
@@ -156,6 +157,13 @@ export default function CampaignShow({ campaign, breakdown, events }: { campaign
                     )}
                 </Card>
             </div>
+
+            <Card className="mt-4 overflow-hidden">
+                <div className="flex items-center justify-between border-b p-5"><div><h2 className="text-sm font-semibold">Recipients and follow-ups</h2><p className="mt-1 text-xs text-muted-foreground">Permission evidence is captured on each linked contact; delivery and sequence status update here.</p></div><span className="font-mono text-xs text-muted-foreground">{fmt(recipients.total)} recipients</span></div>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm"><thead className="bg-muted/30 text-xs text-muted-foreground"><tr><th className="px-5 py-2.5 font-medium">Contact</th><th className="px-4 py-2.5 font-medium">Permission</th><th className="px-4 py-2.5 font-medium">Delivery</th><th className="px-4 py-2.5 font-medium">Follow-up</th><th className="px-5 py-2.5 font-medium">Next action</th></tr></thead><tbody className="divide-y">{recipients.data.map((recipient) => <tr key={recipient.id}><td className="px-5 py-3"><Link href={`/contacts/${recipient.contact.id}`} className="font-medium hover:underline">{recipient.contact.email}</Link><div className="text-xs capitalize text-muted-foreground">{recipient.contact.pipeline_status.replace('_', ' ')}</div></td><td className="px-4 py-3 capitalize text-muted-foreground">{recipient.contact.permission_status.replace('_', ' ')}</td><td className="px-4 py-3"><StatusBadge status={recipient.status} />{recipient.error && <div className="mt-1 max-w-xs truncate text-xs text-red-400">{recipient.error}</div>}</td><td className="px-4 py-3">{recipient.sequence_enrollment ? <StatusBadge status={recipient.sequence_enrollment.status} /> : <span className="text-xs text-muted-foreground">None</span>}</td><td className="px-5 py-3 text-xs text-muted-foreground">{recipient.sequence_enrollment?.next_send_at ? dateTime(recipient.sequence_enrollment.next_send_at) : recipient.sequence_enrollment?.stop_reason?.replace('_', ' ') || '—'}</td></tr>)}</tbody></table>
+                </div>
+            </Card>
         </AppLayout>
     );
 }

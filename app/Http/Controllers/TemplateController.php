@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\SendMailMessageJob;
 use App\Models\Contact;
-use App\Models\Sender;
 use App\Models\Template;
 use App\Services\EmailRenderer;
-use App\Services\Senders\SenderRegistry;
+use App\Services\Mailbox\OutboundMailService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -21,12 +21,12 @@ class TemplateController extends Controller
 
     public function create()
     {
-        return Inertia::render('Templates/Editor', ['template' => null, 'fields' => $this->fields()]);
+        return Inertia::render('Templates/TemplateEditor', ['template' => null, 'fields' => $this->fields()]);
     }
 
     public function edit(Template $template)
     {
-        return Inertia::render('Templates/Editor', ['template' => $template, 'fields' => $this->fields()]);
+        return Inertia::render('Templates/TemplateEditor', ['template' => $template, 'fields' => $this->fields()]);
     }
 
     public function store(Request $request)
@@ -54,31 +54,25 @@ class TemplateController extends Controller
     }
 
     /** Quick send: render a template for one address and send it right away (no tracking). */
-    public function test(Request $request, Template $template)
+    public function test(Request $request, Template $template, OutboundMailService $outbound)
     {
         $data = $request->validate(['email' => ['required', 'email']]);
 
-        $sender = Sender::where('is_active', true)->orderBy('priority')->first();
-        if (! $sender) {
-            return back()->with('error', 'Add an active sender first (Settings → Senders).');
-        }
-
         $contact = Contact::firstWhere('email', strtolower($data['email'])) ?? new Contact(['email' => $data['email'], 'first_name' => 'Friend', 'business' => 'your business']);
         $mail = EmailRenderer::render($template, $contact);
+        try {
+            $message = $outbound->create([
+                'subject' => '[Test] '.$mail['subject'],
+                'html_body' => $mail['html'],
+                'plain_body' => $mail['text'],
+                'source_type' => 'test',
+            ], [['type' => 'to', 'email' => $data['email']]], 'send');
+            SendMailMessageJob::dispatch($message);
+        } catch (\RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
-        $result = SenderRegistry::make($sender)->sendTransactional([
-            'from_name' => $template->from_name,
-            'from_email' => $template->from_email,
-            'reply_to' => $template->reply_to,
-            'to_email' => $data['email'],
-            'subject' => '[Test] '.$mail['subject'],
-            'html' => $mail['html'],
-            'text' => $mail['text'],
-        ]);
-
-        return $result->ok
-            ? back()->with('success', "Test sent to {$data['email']} via {$sender->name}.")
-            : back()->with('error', $result->error);
+        return back()->with('success', "Test queued for {$data['email']} through the connected mailbox.");
     }
 
     private function validated(Request $request): array

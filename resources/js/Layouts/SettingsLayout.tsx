@@ -1,11 +1,12 @@
 import { Link, usePage } from '@inertiajs/react';
-import { Mail, Replace, ShieldCheck, User } from 'lucide-react';
+import { Database, Mail, Replace, ShieldCheck, User } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import { cn } from '@/lib/utils';
 
 const tabs = [
-    { label: 'Senders', href: '/settings/senders', icon: Mail },
+    { label: 'Mailbox', href: '/settings/mailbox', icon: Mail },
     { label: 'Deliverability', href: '/settings/deliverability', icon: ShieldCheck },
+    { label: 'Retention', href: '/settings/retention', icon: Database },
     { label: 'Fallbacks', href: '/settings/fallbacks', icon: Replace },
     { label: 'Profile', href: '/settings/profile', icon: User },
 ];
@@ -13,7 +14,7 @@ const tabs = [
 export default function SettingsLayout({ title, children }: { title: string; children: React.ReactNode }) {
     const { url } = usePage();
     return (
-        <AppLayout title={title} crumbs={[{ label: 'Settings', href: '/settings/senders' }, { label: title }]}>
+        <AppLayout title={title} crumbs={[{ label: 'Settings', href: '/settings/mailbox' }, { label: title }]}>
             <h1 className="mb-4 text-2xl font-semibold tracking-tight">Settings</h1>
             <nav className="mb-6 flex gap-1 overflow-x-auto border-b">
                 {tabs.map((t) => {

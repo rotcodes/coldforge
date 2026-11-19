@@ -20,9 +20,10 @@ interface Props {
     templates: { id: number; name: string; subject: string; from_email: string; updated_at: string; variables: string[] | null }[];
     tags: string[];
     activeCount: number;
-    senderCount: number;
+    mailboxConfigured: boolean;
     defaultCap: number;
     industries: Pick<Industry, 'slug' | 'label'>[];
+    sequences: { id: number; name: string; steps: { id: number; position: number; delay_days: number }[] }[];
 }
 
 const STEPS = [
@@ -34,7 +35,7 @@ const STEPS = [
 
 type Breakdown = { count: number; tiers: { t1: number; t2: number; t3: number; t4: number } };
 
-export default function CampaignCreate({ templates, tags, activeCount, senderCount, defaultCap, industries }: Props) {
+export default function CampaignCreate({ templates, tags, activeCount, mailboxConfigured, defaultCap, industries, sequences }: Props) {
     const [step, setStep] = useState(0);
     const [breakdown, setBreakdown] = useState<Breakdown>({ count: activeCount, tiers: { t1: 0, t2: 0, t3: 0, t4: 0 } });
     const [breakdownLoading, setBreakdownLoading] = useState(false);
@@ -52,7 +53,7 @@ export default function CampaignCreate({ templates, tags, activeCount, senderCou
         send_mode: 'now' as 'now' | 'later',
         schedule_at: '',
         daily_cap: defaultCap,
-        sender_strategy: 'round_robin' as 'round_robin' | 'priority',
+        sequence_id: '' as string,
     });
 
     useEffect(() => {
@@ -127,7 +128,7 @@ export default function CampaignCreate({ templates, tags, activeCount, senderCou
                                 disabled={i > step}
                                 className={cn('flex items-center gap-2 rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', i <= step ? 'text-foreground' : 'text-muted-foreground')}
                             >
-                                <span className={cn('grid size-8 shrink-0 place-items-center rounded-full border transition-all', i < step ? 'border-transparent bg-brand text-white' : i === step ? 'border-primary text-primary shadow-glow' : 'border-border')}>
+                                <span className={cn('grid size-8 shrink-0 place-items-center rounded-full border transition-all', i < step ? 'border-transparent bg-primary text-primary-foreground' : i === step ? 'border-primary text-primary shadow-glow' : 'border-border')}>
                                     {i < step ? <Check className="size-4" /> : <s.icon className="size-4" />}
                                 </span>
                                 <span className="hidden sm:inline">{s.label}</span>
@@ -137,11 +138,11 @@ export default function CampaignCreate({ templates, tags, activeCount, senderCou
                     ))}
                 </ol>
 
-                {senderCount === 0 && (
+                {!mailboxConfigured && (
                     <div className="mb-4 flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-300">
                         <AlertTriangle className="size-4 shrink-0" />
-                        No active sender yet. Sends will wait until you{' '}
-                        <Link href="/settings/senders" className="underline">add one</Link>.
+                        Hostinger mailbox is not connected. Sends will wait until you{' '}
+                        <Link href="/settings/mailbox" className="underline">configure it</Link>.
                     </div>
                 )}
 
@@ -165,7 +166,7 @@ export default function CampaignCreate({ templates, tags, activeCount, senderCou
                                                         <button type="button" onClick={() => form.setData('template_id', t.id)} className="w-full rounded-xl p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                                                             <div className="flex items-start justify-between gap-2">
                                                                 <span className="font-medium">{t.name}</span>
-                                                                {selected && (<span className="grid size-5 place-items-center rounded-full bg-brand text-white"><Check className="size-3" /></span>)}
+                                                                {selected && (<span className="grid size-5 place-items-center rounded-full bg-primary text-primary-foreground"><Check className="size-3" /></span>)}
                                                             </div>
                                                             <p className="mt-1 truncate text-sm text-muted-foreground">{t.subject}</p>
                                                             <p className="mt-3 text-xs text-muted-foreground">{t.from_email} · {date(t.updated_at)}</p>
@@ -325,20 +326,17 @@ export default function CampaignCreate({ templates, tags, activeCount, senderCou
                                                 <Input id="schedule_at" type="datetime-local" value={form.data.schedule_at} onChange={(e) => form.setData('schedule_at', e.target.value)} className="w-full sm:w-64" />
                                             </Field>
                                         )}
-                                        <div className="grid gap-4 sm:grid-cols-2">
+                                        <div className="max-w-sm">
                                             <Field label="Daily cap" htmlFor="daily_cap" error={form.errors.daily_cap} hint={days ? `${fmt(breakdown.count)} recipients ≈ ${days} day${days > 1 ? 's' : ''}` : undefined}>
                                                 <Input id="daily_cap" type="number" min={1} value={form.data.daily_cap} onChange={(e) => form.setData('daily_cap', Number(e.target.value))} />
                                             </Field>
-                                            <Field label="Sender strategy" error={form.errors.sender_strategy}>
-                                                <Select value={form.data.sender_strategy} onValueChange={(v) => form.setData('sender_strategy', v as 'round_robin' | 'priority')}>
-                                                    <SelectTrigger><SelectValue /></SelectTrigger>
-                                                    <SelectContent>
-                                                        <SelectItem value="round_robin">Round robin (spread load)</SelectItem>
-                                                        <SelectItem value="priority">Priority (fill first sender first)</SelectItem>
-                                                    </SelectContent>
-                                                </Select>
-                                            </Field>
                                         </div>
+                                        <Field label="Automatic follow-up sequence" error={form.errors.sequence_id} hint="Optional. Follow-ups stop on a reply, suppression, or lost eligibility.">
+                                            <Select value={form.data.sequence_id || 'none'} onValueChange={(value) => form.setData('sequence_id', value === 'none' ? '' : value)}>
+                                                <SelectTrigger className="max-w-sm"><SelectValue /></SelectTrigger>
+                                                <SelectContent><SelectItem value="none">No follow-ups</SelectItem>{sequences.map((sequence) => <SelectItem key={sequence.id} value={String(sequence.id)}>{sequence.name} · {sequence.steps.length} steps</SelectItem>)}</SelectContent>
+                                            </Select>
+                                        </Field>
                                     </Card>
                                 </div>
                             )}

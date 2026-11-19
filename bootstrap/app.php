@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\AuditMutations;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -12,12 +13,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->web(append: [HandleInertiaRequests::class]);
+        $middleware->web(append: [HandleInertiaRequests::class, AuditMutations::class]);
         $middleware->redirectGuestsTo('/login');
         $middleware->redirectUsersTo('/');
         // One-click unsubscribe (RFC 8058) is a POST from the mailbox provider, no CSRF token possible.
-        // Brevo webhooks are also unauthenticated POSTs — auth is the long secret in the URL path.
-        $middleware->validateCsrfTokens(except: ['u/*', 'webhooks/*']);
+        $middleware->validateCsrfTokens(except: ['u/*']);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

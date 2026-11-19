@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CampaignSend;
 use App\Models\Contact;
+use App\Models\MailboxSetting;
 use App\Models\Template;
 use Illuminate\Support\Facades\URL;
 
@@ -24,9 +25,12 @@ class EmailRenderer
         $text = $template->text_body ? self::fill($template->text_body, $vars) : null;
 
         if ($send) {
-            $html = self::trackLinks($html, $send);
+            $mailbox = MailboxSetting::current();
+            if ($mailbox->track_campaign_clicks) {
+                $html = self::trackLinks($html, $send);
+            }
             $hasOwnUnsub = str_contains($template->html_body, 'unsubscribe_url');
-            $html = self::appendFooter($html, $send, $hasOwnUnsub ? null : $unsubscribeUrl);
+            $html = self::appendFooter($html, $send, $hasOwnUnsub ? null : $unsubscribeUrl, $mailbox);
             if ($text !== null && ! str_contains($template->text_body, 'unsubscribe_url')) {
                 $text .= "\n\n--\nUnsubscribe: {$unsubscribeUrl}";
             }
@@ -65,13 +69,15 @@ class EmailRenderer
         }, $html);
     }
 
-    private static function appendFooter(string $html, CampaignSend $send, ?string $unsubscribeUrl): string
+    private static function appendFooter(string $html, CampaignSend $send, ?string $unsubscribeUrl, MailboxSetting $mailbox): string
     {
-        $pixel = '<img src="'.e(URL::signedRoute('track.open', ['send' => $send->id])).'" width="1" height="1" alt="" style="display:block;border:0;width:1px;height:1px" />';
+        $pixel = $mailbox->track_campaign_opens
+            ? '<img src="'.e(URL::signedRoute('track.open', ['send' => $send->id])).'" width="1" height="1" alt="" style="display:block;border:0;width:1px;height:1px" />'
+            : '';
 
         $footer = '';
         if ($unsubscribeUrl) {
-            $address = config('coldforge.footer_address');
+            $address = $mailbox->physical_address;
             $footer = '<p style="margin-top:32px;font-size:12px;color:#888;font-family:sans-serif">'
                 .($address ? e($address).'<br>' : '')
                 .'Don\'t want these emails? <a href="'.e($unsubscribeUrl).'" style="color:#888">Unsubscribe</a></p>';

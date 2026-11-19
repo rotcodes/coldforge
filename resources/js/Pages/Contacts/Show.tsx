@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, router } from '@inertiajs/react';
-import { Activity, ExternalLink, Pencil, Send, Sparkles, Trash2 } from 'lucide-react';
+import { Activity, ExternalLink, Mail, Pause, Pencil, Play, Send, Sparkles, Trash2, XCircle } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import { confirmDialog, visit } from '@/Components/ConfirmDialog';
 import StatusBadge from '@/Components/StatusBadge';
@@ -32,7 +32,10 @@ interface Event {
     send: { campaign: { id: number; name: string } };
 }
 
-export default function ContactShow({ contact, sends, events, tier, industry }: { contact: Contact; sends: Send[]; events: Event[]; tier: number; industry: Industry | null }) {
+type Message = { id: number; direction: 'incoming' | 'outgoing'; status: string; subject: string | null; from_email: string | null; message_at: string | null; scheduled_at: string | null };
+type Enrollment = { id: number; status: string; next_step_position: number; next_send_at: string | null; stop_reason: string | null; sequence: { id: number; name: string } };
+
+export default function ContactShow({ contact, sends, events, tier, industry, messages, enrollments }: { contact: Contact; sends: Send[]; events: Event[]; tier: number; industry: Industry | null; messages: Message[]; enrollments: Enrollment[] }) {
     const [editOpen, setEditOpen] = useState(false);
     const name = contact.decision_maker || [contact.first_name, contact.last_name].filter(Boolean).join(' ') || contact.email;
 
@@ -45,6 +48,10 @@ export default function ContactShow({ contact, sends, events, tier, industry }: 
         ['Source', contact.source_system || contact.source],
         ['Lead score', contact.lead_score != null ? <span className="font-mono">{contact.lead_score}</span> : null],
         ['Confidence', contact.confidence],
+        ['Pipeline', contact.pipeline_status?.replace('_', ' ')],
+        ['Campaign permission', contact.permission_status?.replace('_', ' ')],
+        ['Last contacted', contact.last_contacted_at ? dateTime(contact.last_contacted_at) : null],
+        ['Last reply', contact.last_replied_at ? dateTime(contact.last_replied_at) : null],
     ];
 
     const intel: [string, React.ReactNode][] = [
@@ -61,7 +68,7 @@ export default function ContactShow({ contact, sends, events, tier, industry }: 
     return (
         <AppLayout title={name} crumbs={[{ label: 'Contacts', href: '/contacts' }, { label: name }]}>
             <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center">
-                <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-brand text-lg font-semibold text-white shadow-glow">{name.slice(0, 1).toUpperCase()}</div>
+                <div className="grid size-12 shrink-0 place-items-center rounded-2xl bg-primary text-lg font-semibold text-primary-foreground shadow-glow">{name.slice(0, 1).toUpperCase()}</div>
                 <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                         <h1 className="truncate text-2xl font-semibold tracking-tight">{name}</h1>
@@ -126,6 +133,13 @@ export default function ContactShow({ contact, sends, events, tier, industry }: 
 
                 <div className="space-y-4 lg:col-span-2">
                     <Card className="overflow-hidden">
+                        <h2 className="flex items-center gap-2 p-5 pb-3 text-sm font-semibold"><Mail className="size-4 text-primary" /> Communication history</h2>
+                        {messages.length === 0 ? <p className="px-5 pb-5 text-sm text-muted-foreground">No synchronized conversations yet.</p> : <ul className="divide-y">{messages.map((message) => <li key={message.id} className="flex items-center gap-3 px-5 py-3 text-sm"><span className="w-16 text-xs capitalize text-muted-foreground">{message.direction}</span><Link href={`/mail?id=${message.id}`} className="min-w-0 flex-1 truncate font-medium hover:underline">{message.subject || '(no subject)'}</Link><StatusBadge status={message.status} /><span className="hidden text-xs text-muted-foreground sm:inline">{dateTime(message.message_at || message.scheduled_at)}</span></li>)}</ul>}
+                    </Card>
+
+                    {enrollments.length > 0 && <Card className="overflow-hidden"><h2 className="p-5 pb-3 text-sm font-semibold">Follow-up sequences</h2><ul className="divide-y">{enrollments.map((enrollment) => <li key={enrollment.id} className="flex flex-wrap items-center gap-2 px-5 py-3 text-sm"><div className="min-w-0 flex-1"><div className="font-medium">{enrollment.sequence.name}</div><div className="text-xs text-muted-foreground">{enrollment.next_send_at ? `Step ${enrollment.next_step_position} · ${dateTime(enrollment.next_send_at)}` : enrollment.stop_reason?.replaceAll('_', ' ') || 'No remaining step'}</div></div><StatusBadge status={enrollment.status} />{enrollment.status === 'active' && <Button size="sm" variant="ghost" onClick={() => router.post(`/contacts/${contact.id}/sequences/${enrollment.id}/status`, { status: 'paused' }, { preserveScroll: true })}><Pause /> Pause</Button>}{enrollment.status === 'paused' && <Button size="sm" variant="ghost" onClick={() => router.post(`/contacts/${contact.id}/sequences/${enrollment.id}/status`, { status: 'active' }, { preserveScroll: true })}><Play /> Resume</Button>}{['active', 'paused'].includes(enrollment.status) && <Button size="icon" variant="ghost" title="End follow-ups" onClick={() => router.post(`/contacts/${contact.id}/sequences/${enrollment.id}/status`, { status: 'stopped' }, { preserveScroll: true })}><XCircle /></Button>}</li>)}</ul></Card>}
+
+                    <Card className="overflow-hidden">
                         <h2 className="flex items-center gap-2 p-5 pb-3 text-sm font-semibold">
                             <Send className="size-4 text-primary" /> Campaigns received
                         </h2>
@@ -173,7 +187,7 @@ export default function ContactShow({ contact, sends, events, tier, industry }: 
                 </div>
             </div>
 
-            <ContactDialog open={editOpen} onOpenChange={setEditOpen} contact={contact} tags={[]} statuses={['active', 'bounced', 'unsubscribed', 'complained']} industries={industry ? [{ slug: industry.slug, label: industry.label }] : []} />
+            <ContactDialog open={editOpen} onOpenChange={setEditOpen} contact={contact} tags={[]} statuses={['active', 'replied', 'bounced', 'unsubscribed', 'complained']} industries={industry ? [{ slug: industry.slug, label: industry.label }] : []} />
         </AppLayout>
     );
 }

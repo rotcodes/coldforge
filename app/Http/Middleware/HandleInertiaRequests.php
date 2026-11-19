@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\MailMessage;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -19,7 +20,7 @@ class HandleInertiaRequests extends Middleware
                 'error' => fn () => $request->session()->get('error'),
             ],
             // Cheap live counter for the sidebar inbox badge. Guest requests return 0.
-            'unread_inbox' => fn () => $request->user() ? \App\Models\InboxMessage::where('is_read', false)->count() : 0,
+            'unread_inbox' => fn () => $request->user() ? MailMessage::where('direction', 'incoming')->where('is_read', false)->count() : 0,
         ];
     }
 }

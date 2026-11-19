@@ -4,10 +4,10 @@ Read this first. It covers how to install, run and test ColdForge, how the code 
 Deeper history and design decisions: `NOTES.md` (chronological). Deploy steps: `README.md`. Open work: `TODO.md`.
 
 ## What this is
-Single-user cold-outreach dashboard: **upload leads → write template → schedule send → watch stats**.
+Single-user Hostinger email and permission-based outreach workspace: **sync mail → manage conversations → schedule messages → run safeguarded campaigns and follow-ups**.
 Laravel 12 · Inertia 2 · React 18 + TypeScript · Tailwind 3 + shadcn/ui (new-york) · Framer Motion · Recharts · Monaco · MySQL/MariaDB · Redis queue (prod).
 
-Intentionally lean. **Do not add:** multi-user/roles, drag-drop builder, A/B tests, drip sequences, forms, billing, public API (see Non-goals in `TODO.md`).
+Intentionally lean. **Do not add:** multi-user/roles, billing, public API, or enterprise CRM complexity. Follow-up sequences are now a supported core feature.
 
 ---
 
@@ -61,13 +61,13 @@ Hot reload while editing React: run `npm run dev` alongside `php artisan serve`.
 ## Verify before you hand off (all must pass)
 
 ```bash
-php artisan test        # 17 feature tests on MySQL DB `coldforge_test` (see phpunit.xml). Brevo is HTTP-faked
+php artisan test        # tests use MySQL DB `coldforge_test` (see phpunit.xml)
 npx tsc --noEmit        # TypeScript
 npm run build           # production assets
 ```
 
 Tests use `RefreshDatabase` on **`coldforge_test` only**; they never touch `coldforge`. MySQL must be running.
-Never send real email from tests: always `Http::fake()` Brevo.
+Never send real email or synchronize a live mailbox from tests. Fake `HostingerMailer`, IMAP-facing services, and Groq HTTP calls.
 
 ---
 
@@ -82,24 +82,30 @@ app/
     CsvImportController.php    JSON: upload+preview → start → poll
     TemplateController.php     CRUD + quick "test" send
     CampaignController.php     wizard store (creates draft + campaign_sends), launch/pause/resume, live count
-    SenderController.php       CRUD, toggle, test connection; secrets masked as ********
+    MailController.php         synchronized mailbox, views, and two-way actions
+    MailboxSettingsController.php encrypted Hostinger SMTP/IMAP settings and connection tests
+    ComposeController.php      personal drafts, attachments, scheduled mail, reply/forward
+    SequenceController.php     reusable follow-up sequences and lifecycle controls
+    AiController.php           opt-in, human-review-only Groq assistance
     SettingsController.php     profile, password, deliverability DNS checks
     TrackingController.php     public signed: open pixel, click proxy, unsubscribe
   Jobs/
     ImportContactsJob.php      upsert CSV in batches of 500, merges tags/custom fields
     DispatchDueCampaignsJob.php  every minute (routes/console.php): scheduled→running, tops up running
     ProcessCampaignJob.php     unique per campaign; moves ≤(daily_cap − sent today) queued → sending, reserves sender quota
-    SendEmailJob.php           render + send; RateLimited('sender'); 429/5xx retry ×3 (10/60/300s); 4xx fail
+    SendEmailJob.php           render a campaign email into the shared outbound queue
+    SendMailMessageJob.php     centralized SMTP delivery, allowance, idempotency, retry/uncertainty
+    SyncMailboxJob.php         incremental/full folder synchronization
+    DispatchSequenceStepsJob.php eligibility-aware follow-up delivery
   Services/
     EmailRenderer.php          {{vars}} → click-proxy links → unsubscribe footer + pixel
-    Senders/SenderInterface.php, SenderResult.php
-    Senders/SenderRegistry.php method(): 'api' (Brevo only) | 'smtp' (everything else / Brevo SMTP); make(); pick(strategy)
-    Senders/BrevoSender.php    POST https://api.brevo.com/v3/smtp/email, GET /account for test
-    Senders/SmtpSender.php     Symfony Mailer ESMTP
+    Mailbox/*                  Hostinger SMTP/IMAP, synchronization, connection tests, unified outbound mail
+    Sequences/SequenceScheduler.php follow-up timing and advancement
+    AI/GroqClient.php          centralized Groq timeouts, retries, parsing, and schema validation
   Models/                      Contact, CsvImport, Template, Sender (config = encrypted:array), Campaign, CampaignSend, Event, Setting
-config/coldforge.php           BREVO_API_KEY fallback, default cap, sender TPS, footer address
+config/coldforge.php           campaign defaults and industry presets
 database/migrations/2026_10_16_000001_create_coldforge_tables.php   all app tables
-database/seeders/DatabaseSeeder.php  admin user (random pw printed), Brevo sender, sample template, demo contacts (non-prod only)
+database/seeders/DatabaseSeeder.php  admin user, unconfigured mailbox defaults, sample template, ineligible demo contacts
 database/samples/              sample_contacts.csv, sample_template.html
 routes/web.php                 all routes (plain URLs, no Ziggy)
 routes/console.php             scheduler
@@ -123,7 +129,7 @@ tests/Feature/ManagementTest.php   CRUD, settings, senders API/SMTP, security ch
 - **Deletes / destructive actions:** `confirmDialog({ title, description, onConfirm: visit((o) => router.delete(url, o)) })`. Never `window.confirm`.
 - **Styling:** Tailwind tokens from `app.css`/`tailwind.config.js`. One accent: `bg-brand` (indigo→violet). Status colors only for status (`StatusBadge`). Glass surfaces: `.glass`. Icons: `lucide-react` only, no emoji.
 - **Cards:** `TiltCard` for decorative cards (subtle tilt, no hover shadow); plain `Card` for anything interactive like charts/tables.
-- **Secrets:** sender credentials live in `senders.config` (encrypted with APP_KEY) and are never sent to the browser.
+- **Secrets:** the mailbox password uses Laravel's encrypted cast and is never sent to the browser, logs, or Groq.
 - **PHP style:** Laravel defaults, `$request->validate([...])` inline in controllers, no Form Request classes, no repositories/services unless reused.
 - **Keep it simple.** The owner explicitly asked for "simple, efficient, no over-engineering".
 
@@ -134,7 +140,7 @@ tests/Feature/ManagementTest.php   CRUD, settings, senders API/SMTP, security ch
 - **Tailwind must stay on v3.** For new shadcn components use `npx shadcn@2.3.0 add <name>` (latest shadcn targets Tailwind 4). After adding `sonner`, remove `next-themes` (we use `lib/theme.ts`).
 - **Tag filtering** uses `LIKE '%"tag"%'` on the JSON column (portable, fine at single-user scale).
 - **Quota is reserved** when a send is assigned (`sent_today++`) and released on failure or pause.
-- Monaco loads from the jsDelivr CDN at runtime (`@monaco-editor/react` default).
+- Monaco is bundled locally through `loader.config({ monaco })`; do not restore a runtime CDN dependency.
 
 ## Production safety (VPS srv1810078.hstgr.cloud)
 - Deploy only to `/var/www/coldforge`, DB `coldforge` / user `coldforge_user`, Redis DB index **2** with prefix `coldforge_`, nginx vhost `coldforge`, supervisor program `coldforge-worker`.
