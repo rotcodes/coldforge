@@ -508,3 +508,11 @@ Total                 48 tests · 320 assertions · 8.6s
 - `php artisan test`: 25 passed, 172 assertions, including approval-gated contact creation and operator-mode draft creation without delivery.
 - `npx tsc --noEmit`, changed-file Pint, `git diff --check`, route listing, local migration, and the Vite production build passed.
 - No real email was sent and no production mutation was performed during local verification.
+
+## [2026-11-20 14:20] Fix — Intelligence optimistic-render crash
+
+### What
+- Changed the message auto-scroll effect to an explicit block body so it always returns `undefined`. The expression-bodied effect could expose `scrollIntoView()`'s return value to React as an effect cleanup and blank the page when optimistic/busy state changed.
+
+### Evidence
+- The production request itself completed both Codex phases and stored the assistant reply; only the React render crashed. The fix is verified against the same live read-only conversation flow before handoff.

@@ -42,7 +42,9 @@ export default function IntelligenceIndex({ conversations, conversation, availab
         setError(null);
     }, [conversation?.id]);
 
-    useEffect(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages, busy]);
+    useEffect(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages, busy]);
 
     const submit = async (event?: FormEvent, suggested?: string) => {
         event?.preventDefault();

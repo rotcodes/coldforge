@@ -144,6 +144,7 @@ tests/Feature/ManagementTest.php   CRUD, settings, senders API/SMTP, security ch
 
 ## Production safety (Hostinger shared hosting)
 - Deploy only to the verified ColdForge checkout `/home/u105894521/coldforge-app` and copied public root `/home/u105894521/domains/digitelly.net/public_html/mail`. Preserve the production `.env`, current Hostinger database, and hPanel scheduler/queue jobs.
+- Preserve the public root's customized `index.php` and `.htaccess`; only replace the staged `build` assets during ordinary updates. The stock Laravel `public/index.php` has incorrect relative application paths for this separate shared-hosting document root.
 - The owner confirmed on 2026-11-20 that UGC Jungle is **not** hosted on this VPS. Do not assume historical UGC Jungle paths, vhosts, or databases exist here.
 - Keep every production action scoped to the verified ColdForge application, public document root, database, scheduler, and worker. Do not inspect or modify unrelated accounts, sites, paths, vhosts, or databases.
 - Don't run `migrate:fresh` / `db:wipe` in production. Use `php artisan migrate --force` only.
