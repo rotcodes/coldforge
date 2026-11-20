@@ -151,7 +151,7 @@ php artisan route:cache
 php artisan view:cache
 ```
 
-Copy `public/index.php`, `.htaccess`, and the newly built `public/build` into the verified public document root using a staged/atomic replacement, normalize public directories to `0755` and files to `0644`, then run `php artisan up`. Verify HTTP, the deployed manifest checksum, migrations, queue drain, scheduler activity, and recent Laravel logs before removing the temporary previous build. The exact backup-first deployment evidence is recorded chronologically in `NOTES.md`.
+Copy the newly built `public/build` into the verified public document root using a staged/atomic replacement, normalize public directories to `0755` and files to `0644`, then run `php artisan up`. Preserve the shared-hosting public root's customized `index.php`, which points to `/home/u105894521/coldforge-app`; Laravel's stock relative-path `public/index.php` will make the live site return HTTP 500 from this separate document root. Preserve `.htaccess` unless a reviewed routing change explicitly requires replacing it. Verify HTTP, the deployed manifest checksum, migrations, queue drain, scheduler activity, and recent Laravel logs before removing the temporary previous build. The exact backup-first deployment evidence is recorded chronologically in `NOTES.md`.
 
 The hPanel jobs must continue to run the Laravel scheduler and short-lived database queue worker every minute. They are managed in hPanel and therefore do not appear in `crontab -l` over SSH.
 
