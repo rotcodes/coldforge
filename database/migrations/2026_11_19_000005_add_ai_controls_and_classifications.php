@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::table('mailbox_settings', function (Blueprint $table) {
             $table->boolean('ai_processing_enabled')->default(false)->after('track_campaign_clicks');
-            $table->string('ai_model')->default('openai/gpt-oss-120b')->after('ai_processing_enabled');
+            $table->string('ai_model')->default('gpt-6.2-sol')->after('ai_processing_enabled');
         });
 
         Schema::create('ai_classifications', function (Blueprint $table) {

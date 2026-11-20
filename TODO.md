@@ -11,7 +11,8 @@
 - [x] Explicit contact permission state, physical-address requirement, suppression list, one-click unsubscribe
 - [x] Campaign privacy switches for open/click tracking
 - [x] Reusable business-day follow-up sequences that stop on replies or ineligibility
-- [x] Central Groq client and opt-in, human-review-only mail summary/classification/reply drafts
+- [x] ChatGPT-authenticated Codex provider and opt-in mail summary/classification/reply assistance
+- [x] Intelligence permission modes with proposed, confirmed, audited contact and mail actions
 - [x] Neutral dark visual foundation and operational overview metrics
 - [x] Brevo, multi-sender, webhook, and legacy read-only inbox code removed
 - [x] Secure on-demand attachment downloads with size limits and forced download headers

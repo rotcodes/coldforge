@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Contact;
 use App\Models\Industry;
-use App\Services\GroqIndustrySuggester;
+use App\Services\CodexIndustrySuggester;
 use App\Services\IndustryMatcher;
 use App\Services\IndustrySuggester;
 use Illuminate\Http\Request;
@@ -106,19 +106,19 @@ class IndustryController extends Controller
 
     /**
      * Suggest draft industry presets by clustering unmapped text. Returns JSON, no DB writes.
-     * Prefers the LLM-powered Groq clusterer when a GROQ_API_KEY is configured;
+     * Prefers the Codex-powered semantic clusterer when Codex is connected;
      * falls back to the keyword-greedy heuristic if the LLM is unavailable or empty.
      */
     public function suggest()
     {
-        $groq = app(GroqIndustrySuggester::class);
+        $codex = app(CodexIndustrySuggester::class);
         $source = 'heuristic';
         $suggestions = [];
 
-        if ($groq->available()) {
-            $suggestions = $groq->suggest();
+        if ($codex->available()) {
+            $suggestions = $codex->suggest();
             if (! empty($suggestions)) {
-                $source = 'groq';
+                $source = 'codex';
             }
         }
 

@@ -35,9 +35,12 @@ return [
         ],
     ],
 
-    'groq' => [
-        'api_key' => env('GROQ_API_KEY'),
-        'model' => env('GROQ_MODEL', 'openai/gpt-oss-120b'),
+    'codex' => [
+        'binary' => env('CODEX_BINARY', '/home/u105894521/.local/bin/codex'),
+        'home' => env('CODEX_HOME', '/home/u105894521/.codex'),
+        'auth_file' => env('CODEX_AUTH_FILE', '/home/u105894521/.codex/auth.json'),
+        'model' => env('CODEX_MODEL', 'gpt-6.2-sol'),
+        'timeout' => (int) env('CODEX_TIMEOUT', 55),
     ],
 
 ];

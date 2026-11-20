@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { Link, router } from '@inertiajs/react';
-import { Bot, FilePenLine, Loader2, MessageSquarePlus, Send, Sparkles, Trash2, User } from 'lucide-react';
+import { Bot, Check, FilePenLine, Loader2, MessageSquarePlus, Send, ShieldCheck, Sparkles, Trash2, User, X } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import EmptyState from '@/Components/EmptyState';
 import { confirmDialog, visit } from '@/Components/ConfirmDialog';
@@ -12,7 +12,9 @@ import { cn } from '@/lib/utils';
 
 type ConversationSummary = { id: number; title: string; updated_at: string };
 type Message = { id: number; role: 'user' | 'assistant'; content: string; tool_calls?: unknown[] | null; created_at: string };
-type Conversation = { id: number; title: string; messages: Message[] } | null;
+type Mode = 'read_only' | 'approval' | 'operator';
+type IntelligenceAction = { id?: number; action?: string; risk?: 'low' | 'medium' | 'high'; status: string; summary: string; payload?: Record<string, unknown>; result?: Record<string, unknown> | null; error?: string | null };
+type Conversation = { id: number; title: string; mode: Mode; messages: Message[]; actions: IntelligenceAction[] } | null;
 
 type Props = {
     conversations: ConversationSummary[];
@@ -28,12 +30,15 @@ export default function IntelligenceIndex({ conversations, conversation, availab
     const [error, setError] = useState<string | null>(null);
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [draft, setDraft] = useState<{ draft_id: number; edit_url: string; status: string } | null>(null);
+    const [actions, setActions] = useState<IntelligenceAction[]>(conversation?.actions ?? []);
+    const [actionBusy, setActionBusy] = useState<number | null>(null);
     const bottomRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         setMessages(conversation?.messages ?? []);
         setSuggestions([]);
         setDraft(null);
+        setActions(conversation?.actions ?? []);
         setError(null);
     }, [conversation?.id]);
 
@@ -57,6 +62,7 @@ export default function IntelligenceIndex({ conversations, conversation, availab
             setMessages((current) => [...current, data.message]);
             setSuggestions(data.suggestions ?? []);
             setDraft(data.draft?.draft_id ? data.draft : null);
+            setActions((current) => [...current, ...(data.actions ?? [])]);
             router.reload({ only: ['conversations', 'usage'] });
         } catch (exception: any) {
             setMessages((current) => current.filter((item) => item.id !== optimistic.id));
@@ -64,6 +70,24 @@ export default function IntelligenceIndex({ conversations, conversation, availab
             setError(exception?.response?.data?.message ?? 'ColdForge Intelligence could not answer that request.');
         } finally {
             setBusy(false);
+        }
+    };
+
+    const setMode = (mode: Mode) => {
+        if (!conversation || conversation.mode === mode) return;
+        router.patch(`/intelligence/conversations/${conversation.id}/mode`, { mode }, { preserveScroll: true });
+    };
+
+    const decideAction = async (action: IntelligenceAction, decision: 'confirm' | 'reject') => {
+        if (!action.id || actionBusy) return;
+        setActionBusy(action.id);
+        try {
+            const { data } = await axios.post(`/intelligence/actions/${action.id}`, { decision });
+            setActions((current) => current.map((item) => item.id === action.id ? data : item));
+        } catch (exception: any) {
+            setError(exception?.response?.data?.message ?? 'The proposed action could not be updated.');
+        } finally {
+            setActionBusy(null);
         }
     };
 
@@ -81,7 +105,7 @@ export default function IntelligenceIndex({ conversations, conversation, availab
             <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                     <div className="flex items-center gap-2"><Sparkles className="size-5" /><h1 className="text-xl font-semibold tracking-tight">ColdForge Intelligence</h1></div>
-                    <p className="mt-1 text-sm text-muted-foreground">Ask about mail, campaigns, follow-ups, or pipeline work. It can create editable drafts, but never sends.</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Ask Codex about the whole workspace, then review or approve proposed ColdForge actions.</p>
                 </div>
                 <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">Today: {usage.requests} requests · {usage.tokens.toLocaleString()} tokens</span>
@@ -91,7 +115,7 @@ export default function IntelligenceIndex({ conversations, conversation, availab
 
             {!available && (
                 <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-200">
-                    Intelligence is unavailable. Enable AI processing in <Link className="underline" href="/settings/mailbox">Mailbox settings</Link> and configure GROQ_API_KEY.
+                    Intelligence is unavailable. Enable AI processing in <Link className="underline" href="/settings/mailbox">Mailbox settings</Link> and connect the authenticated Codex CLI on the application host.
                 </div>
             )}
 
@@ -112,7 +136,14 @@ export default function IntelligenceIndex({ conversations, conversation, availab
                     {conversation ? (
                         <>
                             <div className="flex items-center justify-between border-b px-4 py-3">
-                                <div className="min-w-0"><div className="truncate text-sm font-medium">{conversation.title}</div><div className="text-xs text-muted-foreground">Read-only tools · explicit draft creation only</div></div>
+                                <div className="min-w-0"><div className="truncate text-sm font-medium">{conversation.title}</div><div className="text-xs text-muted-foreground">Codex reasoning · bounded ColdForge tools · audited actions</div></div>
+                                <div className="ml-auto flex items-center gap-1 rounded-md border p-1">
+                                    {([
+                                        ['read_only', 'Read only'], ['approval', 'Ask approval'], ['operator', 'Operator'],
+                                    ] as [Mode, string][]).map(([mode, label]) => (
+                                        <Button key={mode} type="button" size="sm" variant={conversation.mode === mode ? 'default' : 'ghost'} onClick={() => setMode(mode)}>{label}</Button>
+                                    ))}
+                                </div>
                                 <Button variant="ghost" size="icon" title="Delete conversation" onClick={removeConversation}><Trash2 /></Button>
                             </div>
                             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 lg:p-6">
@@ -132,6 +163,24 @@ export default function IntelligenceIndex({ conversations, conversation, availab
                                 {busy && <div className="flex items-center gap-3 text-sm text-muted-foreground"><div className="grid size-8 place-items-center rounded-full border bg-muted"><Loader2 className="size-4 animate-spin" /></div>Reviewing ColdForge data…</div>}
                                 {error && <div className="rounded-md border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-red-300">{error}</div>}
                                 {draft && <Card className="flex items-center justify-between gap-3 p-4"><div><div className="flex items-center gap-2 text-sm font-medium"><FilePenLine className="size-4" /> Editable reply draft created</div><p className="mt-1 text-xs text-muted-foreground">Nothing was sent. Review recipients and content before sending.</p></div><Button asChild variant="outline"><Link href={draft.edit_url}>Review draft</Link></Button></Card>}
+                                {actions.map((action, index) => (
+                                    <Card key={action.id ?? `invalid-${index}`} className="p-4">
+                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-2 text-sm font-medium"><ShieldCheck className="size-4" /> {action.summary}</div>
+                                                <div className="mt-1 text-xs text-muted-foreground">{action.action?.replaceAll('_', ' ') ?? 'Requested action'} · {action.risk ?? 'validation'} risk · {action.status}</div>
+                                                {action.error && <div className="mt-2 text-xs text-red-300">{action.error}</div>}
+                                                {typeof action.result?.url === 'string' && <Link href={action.result.url} className="mt-2 inline-block text-xs underline">Open result</Link>}
+                                            </div>
+                                            {action.status === 'proposed' && action.id && (
+                                                <div className="flex shrink-0 gap-2">
+                                                    <Button type="button" size="sm" variant="outline" disabled={actionBusy === action.id} onClick={() => decideAction(action, 'reject')}><X /> Reject</Button>
+                                                    <Button type="button" size="sm" disabled={actionBusy === action.id} onClick={() => decideAction(action, 'confirm')}>{actionBusy === action.id ? <Loader2 className="animate-spin" /> : <Check />} Confirm</Button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </Card>
+                                ))}
                                 {suggestions.length > 0 && <div className="flex flex-wrap gap-2">{suggestions.map((suggestion) => <Button key={suggestion} variant="outline" size="sm" onClick={() => submit(undefined, suggestion)} disabled={busy}>{suggestion}</Button>)}</div>}
                                 <div ref={bottomRef} />
                             </div>
@@ -140,7 +189,7 @@ export default function IntelligenceIndex({ conversations, conversation, availab
                                     <Textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder="Ask ColdForge…" rows={2} disabled={!available || busy} className="min-h-12 resize-none" />
                                     <Button type="submit" size="icon" disabled={!available || busy || !input.trim()} title="Send"><Send /></Button>
                                 </div>
-                                <p className="mt-2 text-center text-[10px] text-muted-foreground">Email text is treated as untrusted evidence. AI output may be wrong; review every draft.</p>
+                                <p className="mt-2 text-center text-[10px] text-muted-foreground">Imported and email text is untrusted. High-impact actions always require confirmation, even in Operator mode.</p>
                             </form>
                         </>
                     ) : (

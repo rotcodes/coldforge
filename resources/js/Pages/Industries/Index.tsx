@@ -163,11 +163,11 @@ type Suggestion = {
     contact_count: number;
 };
 
-type Source = 'groq' | 'heuristic';
+type Source = 'codex' | 'heuristic';
 
 const LOADING_LINES: Record<Source | 'init', string[]> = {
     init: ['Scanning unmapped text…', 'Picking the right clusterer…'],
-    groq: ['Sending to GPT-OSS 120B via Groq…', 'Grouping semantically similar businesses…', 'Drafting workflow phrases…', 'Finalizing clusters…'],
+    codex: ['Asking Codex to inspect unmapped industries…', 'Grouping semantically similar businesses…', 'Drafting workflow phrases…', 'Finalizing clusters…'],
     heuristic: ['Tokenizing text…', 'Scoring token overlap…', 'Clustering by shared keywords…'],
 };
 
@@ -199,7 +199,7 @@ function SuggestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
     // Rotate the loading line every ~1.1s while waiting. Gives the request an "AI thinking" rhythm.
     useEffect(() => {
         if (!loading) return;
-        const lines = source === 'groq' ? LOADING_LINES.groq : LOADING_LINES.init;
+        const lines = source === 'codex' ? LOADING_LINES.codex : LOADING_LINES.init;
         const t = setInterval(() => setLoadingLineIdx((i) => (i + 1) % lines.length), 1100);
         return () => clearInterval(t);
     }, [loading, source]);
@@ -226,7 +226,7 @@ function SuggestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
     const totalContacts = suggestions.filter((_, i) => accepted[i]).reduce((s, c) => s + c.contact_count, 0);
     const acceptedCount = Object.values(accepted).filter(Boolean).length;
 
-    const loadingLines = source === 'groq' ? LOADING_LINES.groq : LOADING_LINES.init;
+    const loadingLines = source === 'codex' ? LOADING_LINES.codex : LOADING_LINES.init;
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -238,8 +238,8 @@ function SuggestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
                         {!loading && suggestions.length > 0 && <SourceBadge source={source} />}
                     </DialogTitle>
                     <p className="mt-1 text-sm text-muted-foreground">
-                        {source === 'groq'
-                            ? 'Semantically clustered by GPT-OSS 120B via Groq. Edit anything, uncheck what you don\'t need, then create them in one go.'
+                        {source === 'codex'
+                            ? 'Semantically clustered by Codex. Edit anything, uncheck what you don\'t need, then create them in one go.'
                             : 'Auto-clustered from your unmapped text. Edit anything, uncheck what you don\'t need, then create them in one go.'}
                     </p>
                 </DialogHeader>
@@ -369,7 +369,7 @@ function SuggestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
 }
 
 function SourceBadge({ source }: { source: Source }) {
-    if (source === 'groq') {
+    if (source === 'codex') {
         return (
             <motion.span
                 initial={{ opacity: 0, scale: 0.9 }}
@@ -377,7 +377,7 @@ function SourceBadge({ source }: { source: Source }) {
                 transition={{ duration: 0.3 }}
                 className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-gradient-to-r from-primary/10 to-brand/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-primary"
             >
-                <Bot className="size-3" /> AI · GPT-OSS 120B
+                <Bot className="size-3" /> AI · Codex
             </motion.span>
         );
     }

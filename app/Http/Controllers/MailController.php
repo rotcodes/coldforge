@@ -6,13 +6,14 @@ use App\Jobs\SyncMailboxJob;
 use App\Models\MailboxSetting;
 use App\Models\MailFolder;
 use App\Models\MailMessage;
+use App\Services\AI\StructuredAiClient;
 use App\Services\Mailbox\MailboxMessageActions;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class MailController extends Controller
 {
-    public function index(Request $request)
+    public function index(Request $request, StructuredAiClient $ai)
     {
         $mailbox = MailboxSetting::current();
         $folders = MailFolder::query()
@@ -78,7 +79,7 @@ class MailController extends Controller
                 'imap_status' => $mailbox->imap_status,
                 'last_synced_at' => $mailbox->last_synced_at,
                 'last_error' => $mailbox->last_connection_error,
-                'ai_enabled' => $mailbox->ai_processing_enabled && filled(config('services.groq.api_key')),
+                'ai_enabled' => $mailbox->ai_processing_enabled && $ai->available(),
             ],
         ]);
     }

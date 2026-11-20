@@ -37,7 +37,7 @@ type Mailbox = {
     track_campaign_opens: boolean;
     track_campaign_clicks: boolean;
     ai_processing_enabled: boolean;
-    ai_model: 'openai/gpt-oss-120b' | 'openai/gpt-oss-20b';
+    ai_model: 'gpt-6.2-sol' | 'gpt-6.2-astra' | 'gpt-6.1-terra';
     has_password: boolean;
 };
 
@@ -231,10 +231,10 @@ export default function MailboxSettings({ mailbox, timezones }: { mailbox: Mailb
                     </Field>
                     <p className="mt-3 text-xs text-muted-foreground">Tracking applies only to campaigns. Personal correspondence stays private by default. Opens and clicks can be distorted by privacy tools and automated scanners.</p>
                     <div className="mt-5 border-t pt-5">
-                        <h4 className="text-sm font-semibold">Groq AI privacy</h4>
+                        <h4 className="text-sm font-semibold">Codex intelligence</h4>
                         <div className="mt-3 grid gap-3 sm:grid-cols-2">
                             <label className="flex items-center justify-between rounded-md border p-3"><span><span className="block text-sm">Allow AI email processing</span><span className="text-xs text-muted-foreground">Off by default. Sends only the selected email when you request assistance.</span></span><Switch checked={form.data.ai_processing_enabled} onCheckedChange={(value) => form.setData('ai_processing_enabled', value)} /></label>
-                            <Field label="Groq model" error={form.errors.ai_model}><Select value={form.data.ai_model} onValueChange={(value) => form.setData('ai_model', value as Mailbox['ai_model'])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="openai/gpt-oss-120b">GPT-OSS 120B · quality</SelectItem><SelectItem value="openai/gpt-oss-20b">GPT-OSS 20B · speed</SelectItem></SelectContent></Select></Field>
+                            <Field label="Codex model" error={form.errors.ai_model}><Select value={form.data.ai_model} onValueChange={(value) => form.setData('ai_model', value as Mailbox['ai_model'])}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="gpt-6.2-sol">GPT-6.2 Sol · everyday</SelectItem><SelectItem value="gpt-6.2-astra">GPT-6.2 Astra · complex</SelectItem><SelectItem value="gpt-6.1-terra">GPT-6.1 Terra · efficient</SelectItem></SelectContent></Select></Field>
                         </div>
                     </div>
                 </Card>
