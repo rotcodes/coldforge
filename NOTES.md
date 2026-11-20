@@ -516,3 +516,10 @@ Total                 48 tests · 320 assertions · 8.6s
 
 ### Evidence
 - The production request itself completed both Codex phases and stored the assistant reply; only the React render crashed. The fix is verified against the same live read-only conversation flow before handoff.
+
+## [2026-11-20 14:40] UX — Composer-level Codex controls
+
+### What
+- Moved the Intelligence permission selector into the message composer and added per-conversation model and reasoning selectors beside the send button.
+- Conversations now persist `mode`, `model`, and `reasoning_effort`; both Codex planning and final-answer calls use the selected model/effort on the next prompt.
+- Available models are GPT-6.2 Sol, GPT-6.2 Astra, and GPT-6.1 Terra. Permission choices remain Read only, Ask approval, and Operator access, with high-impact actions confirmation-gated in every mode.

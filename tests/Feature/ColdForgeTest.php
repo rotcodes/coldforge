@@ -181,6 +181,22 @@ class ColdForgeTest extends TestCase
         $this->assertDatabaseMissing('mail_messages', ['subject' => 'Hello', 'status' => 'queued']);
     }
 
+    public function test_intelligence_preferences_are_saved_per_conversation(): void
+    {
+        $conversation = AiConversation::create(['user_id' => auth()->id(), 'mode' => 'read_only']);
+
+        $this->patch("/intelligence/conversations/{$conversation->id}/mode", [
+            'mode' => 'approval',
+            'model' => 'gpt-6.2-astra',
+            'reasoning_effort' => 'high',
+        ])->assertSessionHasNoErrors();
+
+        $conversation->refresh();
+        $this->assertSame('approval', $conversation->mode);
+        $this->assertSame('gpt-6.2-astra', $conversation->model);
+        $this->assertSame('high', $conversation->reasoning_effort);
+    }
+
     public function test_hard_bounce_suppresses_contact_and_stops_follow_ups(): void
     {
         $template = $this->template();

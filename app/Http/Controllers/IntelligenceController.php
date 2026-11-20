@@ -25,6 +25,7 @@ class IntelligenceController extends Controller
             'conversations' => $conversations,
             'conversation' => $conversation ? [
                 'id' => $conversation->id, 'title' => $conversation->title, 'mode' => $conversation->mode,
+                'model' => $conversation->model, 'reasoning_effort' => $conversation->reasoning_effort,
                 'messages' => $conversation->messages()->oldest('id')->get(['id', 'role', 'content', 'tool_calls', 'created_at']),
                 'actions' => $conversation->actions()->latest('id')->limit(30)->get(['id', 'action', 'risk', 'status', 'summary', 'payload', 'result', 'error', 'created_at'])->reverse()->values(),
             ] : null,
@@ -35,7 +36,13 @@ class IntelligenceController extends Controller
 
     public function create(Request $request)
     {
-        $conversation = AiConversation::create(['user_id' => $request->user()->id, 'mode' => 'read_only']);
+        $mailbox = MailboxSetting::current();
+        $conversation = AiConversation::create([
+            'user_id' => $request->user()->id,
+            'mode' => 'read_only',
+            'model' => $mailbox->ai_model ?: 'gpt-6.2-sol',
+            'reasoning_effort' => 'medium',
+        ]);
 
         return redirect('/intelligence?conversation='.$conversation->id);
     }
@@ -43,10 +50,15 @@ class IntelligenceController extends Controller
     public function mode(Request $request, AiConversation $conversation)
     {
         abort_unless($conversation->user_id === $request->user()->id, 404);
-        $data = $request->validate(['mode' => ['required', 'in:read_only,approval,operator']]);
+        $data = $request->validate([
+            'mode' => ['sometimes', 'required', 'in:read_only,approval,operator'],
+            'model' => ['sometimes', 'required', 'in:gpt-6.2-sol,gpt-6.2-astra,gpt-6.1-terra'],
+            'reasoning_effort' => ['sometimes', 'required', 'in:low,medium,high,xhigh'],
+        ]);
+        abort_if($data === [], 422, 'Choose at least one Intelligence preference.');
         $conversation->update($data);
 
-        return back()->with('success', 'Intelligence permission mode updated.');
+        return back()->with('success', 'Intelligence preferences updated.');
     }
 
     public function action(Request $request, AiAction $action, IntelligenceActionService $actions)

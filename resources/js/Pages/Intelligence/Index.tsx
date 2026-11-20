@@ -1,20 +1,23 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { Link, router } from '@inertiajs/react';
-import { Bot, Check, FilePenLine, Loader2, MessageSquarePlus, Send, ShieldCheck, Sparkles, Trash2, User, X } from 'lucide-react';
+import { Bot, Check, FilePenLine, Gauge, Loader2, LockKeyhole, MessageSquarePlus, Send, ShieldAlert, ShieldCheck, Sparkles, Trash2, User, X } from 'lucide-react';
 import AppLayout from '@/Layouts/AppLayout';
 import EmptyState from '@/Components/EmptyState';
 import { confirmDialog, visit } from '@/Components/ConfirmDialog';
 import { Button } from '@/Components/ui/button';
 import { Card } from '@/Components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/Components/ui/select';
 import { Textarea } from '@/Components/ui/textarea';
 import { cn } from '@/lib/utils';
 
 type ConversationSummary = { id: number; title: string; updated_at: string };
 type Message = { id: number; role: 'user' | 'assistant'; content: string; tool_calls?: unknown[] | null; created_at: string };
 type Mode = 'read_only' | 'approval' | 'operator';
+type Model = 'gpt-6.2-sol' | 'gpt-6.2-astra' | 'gpt-6.1-terra';
+type Reasoning = 'low' | 'medium' | 'high' | 'xhigh';
 type IntelligenceAction = { id?: number; action?: string; risk?: 'low' | 'medium' | 'high'; status: string; summary: string; payload?: Record<string, unknown>; result?: Record<string, unknown> | null; error?: string | null };
-type Conversation = { id: number; title: string; mode: Mode; messages: Message[]; actions: IntelligenceAction[] } | null;
+type Conversation = { id: number; title: string; mode: Mode; model: Model; reasoning_effort: Reasoning; messages: Message[]; actions: IntelligenceAction[] } | null;
 
 type Props = {
     conversations: ConversationSummary[];
@@ -75,9 +78,9 @@ export default function IntelligenceIndex({ conversations, conversation, availab
         }
     };
 
-    const setMode = (mode: Mode) => {
-        if (!conversation || conversation.mode === mode) return;
-        router.patch(`/intelligence/conversations/${conversation.id}/mode`, { mode }, { preserveScroll: true });
+    const setPreference = (preference: Partial<Pick<NonNullable<Conversation>, 'mode' | 'model' | 'reasoning_effort'>>) => {
+        if (!conversation) return;
+        router.patch(`/intelligence/conversations/${conversation.id}/mode`, preference, { preserveScroll: true });
     };
 
     const decideAction = async (action: IntelligenceAction, decision: 'confirm' | 'reject') => {
@@ -139,13 +142,6 @@ export default function IntelligenceIndex({ conversations, conversation, availab
                         <>
                             <div className="flex items-center justify-between border-b px-4 py-3">
                                 <div className="min-w-0"><div className="truncate text-sm font-medium">{conversation.title}</div><div className="text-xs text-muted-foreground">Codex reasoning · bounded ColdForge tools · audited actions</div></div>
-                                <div className="ml-auto flex items-center gap-1 rounded-md border p-1">
-                                    {([
-                                        ['read_only', 'Read only'], ['approval', 'Ask approval'], ['operator', 'Operator'],
-                                    ] as [Mode, string][]).map(([mode, label]) => (
-                                        <Button key={mode} type="button" size="sm" variant={conversation.mode === mode ? 'default' : 'ghost'} onClick={() => setMode(mode)}>{label}</Button>
-                                    ))}
-                                </div>
                                 <Button variant="ghost" size="icon" title="Delete conversation" onClick={removeConversation}><Trash2 /></Button>
                             </div>
                             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 lg:p-6">
@@ -187,9 +183,42 @@ export default function IntelligenceIndex({ conversations, conversation, availab
                                 <div ref={bottomRef} />
                             </div>
                             <form onSubmit={submit} className="border-t p-4">
-                                <div className="mx-auto flex max-w-4xl items-end gap-2">
-                                    <Textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder="Ask ColdForge…" rows={2} disabled={!available || busy} className="min-h-12 resize-none" />
-                                    <Button type="submit" size="icon" disabled={!available || busy || !input.trim()} title="Send"><Send /></Button>
+                                <div className="mx-auto max-w-4xl overflow-hidden rounded-2xl border bg-background/70 shadow-sm focus-within:border-foreground/20">
+                                    <Textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder="Ask ColdForge…" rows={3} disabled={!available || busy} className="min-h-20 resize-none rounded-none border-0 bg-transparent px-4 py-3 shadow-none focus-visible:ring-0" />
+                                    <div className="flex flex-col gap-2 border-t border-border/60 px-2 py-2 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="flex items-center gap-1">
+                                            {conversation.mode === 'read_only' ? <LockKeyhole className="ml-2 size-4 text-muted-foreground" /> : conversation.mode === 'approval' ? <ShieldCheck className="ml-2 size-4 text-amber-400" /> : <ShieldAlert className="ml-2 size-4 text-orange-400" />}
+                                            <Select value={conversation.mode} onValueChange={(value) => setPreference({ mode: value as Mode })} disabled={busy}>
+                                                <SelectTrigger className="h-9 w-auto min-w-32 border-0 bg-transparent shadow-none focus:ring-0"><SelectValue /></SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="read_only">Read only</SelectItem>
+                                                    <SelectItem value="approval">Ask approval</SelectItem>
+                                                    <SelectItem value="operator">Operator access</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <div className="flex items-center justify-end gap-1">
+                                            <Select value={conversation.model} onValueChange={(value) => setPreference({ model: value as Model })} disabled={busy}>
+                                                <SelectTrigger className="h-9 w-auto min-w-36 border-0 bg-transparent shadow-none focus:ring-0"><SelectValue /></SelectTrigger>
+                                                <SelectContent align="end">
+                                                    <SelectItem value="gpt-6.2-sol">GPT-6.2 Sol</SelectItem>
+                                                    <SelectItem value="gpt-6.2-astra">GPT-6.2 Astra</SelectItem>
+                                                    <SelectItem value="gpt-6.1-terra">GPT-6.1 Terra</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            <Gauge className="size-4 text-muted-foreground" />
+                                            <Select value={conversation.reasoning_effort} onValueChange={(value) => setPreference({ reasoning_effort: value as Reasoning })} disabled={busy}>
+                                                <SelectTrigger className="h-9 w-auto min-w-24 border-0 bg-transparent shadow-none focus:ring-0"><SelectValue /></SelectTrigger>
+                                                <SelectContent align="end">
+                                                    <SelectItem value="low">Low</SelectItem>
+                                                    <SelectItem value="medium">Medium</SelectItem>
+                                                    <SelectItem value="high">High</SelectItem>
+                                                    <SelectItem value="xhigh">Extra high</SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                            <Button type="submit" size="icon" className="ml-1 rounded-full" disabled={!available || busy || !input.trim()} title="Send"><Send /></Button>
+                                        </div>
+                                    </div>
                                 </div>
                                 <p className="mt-2 text-center text-[10px] text-muted-foreground">Imported and email text is untrusted. High-impact actions always require confirmation, even in Operator mode.</p>
                             </form>
