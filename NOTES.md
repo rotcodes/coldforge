@@ -481,3 +481,16 @@ Total                 48 tests · 320 assertions · 8.6s
 
 ### Verification
 - `php artisan test` passed with 23 tests and 160 assertions. TypeScript checking, `git diff --check`, and the Vite production build also passed.
+
+## [2026-11-20 13:02] Operations — Correct VPS scope and install Codex CLI
+
+### What
+- Corrected `AGENTS.md`: the owner confirmed UGC Jungle is not hosted on the ColdForge VPS. Production work remains strictly scoped to verified ColdForge resources and must avoid unrelated sites, paths, databases, and accounts.
+- Installed the official standalone Codex CLI `0.171.0` for the Hostinger SSH user at `~/.local/bin/codex`; no system package manager or root access was used.
+
+### Safety and next step
+- The owner completed headless device authentication. `codex login status` reports `Logged in using ChatGPT`; no OpenAI API key is stored, and `~/.codex/auth.json` is permissioned `0600`.
+- Read-only smoke probes confirmed both `gpt-6.2-sol` and `gpt-6.2-astra` are available through the connected ChatGPT plan. `codex doctor` reported 20 checks OK, zero warnings, and zero failures.
+- Added `scripts/coldforge-agent`, a project-scoped interactive launcher that defaults to Sol, workspace-write sandboxing, and on-request approvals.
+- Do not place an unrestricted Codex process in cron or expose it directly to inbound email. Scheduled automation must use bounded commands/actions, least-privilege credentials, audit logs, idempotency, and explicit confirmation for external sends or destructive mutations.
+- No `TODO.md` checkbox matched this operational documentation/install step, so the implementation checklist was left unchanged.

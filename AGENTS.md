@@ -142,11 +142,12 @@ tests/Feature/ManagementTest.php   CRUD, settings, senders API/SMTP, security ch
 - **Quota is reserved** when a send is assigned (`sent_today++`) and released on failure or pause.
 - Monaco is bundled locally through `loader.config({ monaco })`; do not restore a runtime CDN dependency.
 
-## Production safety (VPS srv1810078.hstgr.cloud)
-- Deploy only to `/var/www/coldforge`, DB `coldforge` / user `coldforge_user`, Redis DB index **2** with prefix `coldforge_`, nginx vhost `coldforge`, supervisor program `coldforge-worker`.
-- **NEVER touch** `/var/www/ugcjungle*`, any ugcjungle nginx vhost, or any ugcjungle database. They share the server.
+## Production safety (Hostinger shared hosting)
+- Deploy only to the verified ColdForge checkout `/home/u105894521/coldforge-app` and copied public root `/home/u105894521/domains/digitelly.net/public_html/mail`. Preserve the production `.env`, current Hostinger database, and hPanel scheduler/queue jobs.
+- The owner confirmed on 2026-11-20 that UGC Jungle is **not** hosted on this VPS. Do not assume historical UGC Jungle paths, vhosts, or databases exist here.
+- Keep every production action scoped to the verified ColdForge application, public document root, database, scheduler, and worker. Do not inspect or modify unrelated accounts, sites, paths, vhosts, or databases.
 - Don't run `migrate:fresh` / `db:wipe` in production. Use `php artisan migrate --force` only.
-- Full step-by-step: `README.md` → "Deploy to the Hostinger VPS".
+- Full step-by-step and the explicitly marked legacy dedicated-VPS reference: `README.md` → "Deploy to the Hostinger VPS".
 
 ## Git
 - `main` is the deployable branch. Feature work goes on a branch → PR.
