@@ -537,3 +537,8 @@ Total                 48 tests · 320 assertions · 8.6s
 
 ### What
 - Replaced the primary-token user message bubble, which becomes near-white in dark mode, with a low-contrast neutral elevated surface and subtle border. User messages remain distinct without producing a bright, eye-straining card.
+
+## [2026-11-20 15:15] Operations — Audit selected Codex reasoning
+
+### What
+- Added the conversation-selected reasoning effort to every Codex `ai_requests.metadata` record so live operations can prove the composer model/effort controls reached the actual subprocess invocation.
