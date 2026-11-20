@@ -523,3 +523,6 @@ Total                 48 tests · 320 assertions · 8.6s
 - Moved the Intelligence permission selector into the message composer and added per-conversation model and reasoning selectors beside the send button.
 - Conversations now persist `mode`, `model`, and `reasoning_effort`; both Codex planning and final-answer calls use the selected model/effort on the next prompt.
 - Available models are GPT-6.2 Sol, GPT-6.2 Astra, and GPT-6.1 Terra. Permission choices remain Read only, Ask approval, and Operator access, with high-impact actions confirmation-gated in every mode.
+
+### Live follow-up
+- Added `model` and `reasoning_effort` to the lightweight conversation-list selection. Without them, opening the newest conversation at `/intelligence` supplied null preferences to the composer even though the database values were present.
