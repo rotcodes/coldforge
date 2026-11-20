@@ -494,3 +494,17 @@ Total                 48 tests · 320 assertions · 8.6s
 - Added `scripts/coldforge-agent`, a project-scoped interactive launcher that defaults to Sol, workspace-write sandboxing, and on-request approvals.
 - Do not place an unrestricted Codex process in cron or expose it directly to inbound email. Scheduled automation must use bounded commands/actions, least-privilege credentials, audit logs, idempotency, and explicit confirmation for external sends or destructive mutations.
 - No `TODO.md` checkbox matched this operational documentation/install step, so the implementation checklist was left unchanged.
+
+## [2026-11-20 14:00] Step 6 — Codex-powered full-workspace Intelligence foundation
+
+### What
+- Replaced the active Groq provider with a `StructuredAiClient` backed by the ChatGPT-authenticated Codex CLI. Every web invocation is ephemeral, read-only, approval-free at the shell layer, timeout-bounded, and recorded in `ai_requests`; Codex cannot mutate production directly.
+- Added per-conversation modes: `read_only`, `approval`, and `operator`. Read-only exposes bounded inspection tools; approval stores every requested mutation as a proposed action; operator auto-executes only low-risk draft creation.
+- Added durable `ai_actions` with risk, status, payload, result, confirmation, execution, and error data. Confirmation/rejection is available from the Intelligence UI and successful executions enter the Activity audit log.
+- Added initial validated actions for contact creation/update, new/reply draft creation, and queueing a reviewed message. External delivery, eligible permission changes, and other medium/high-risk mutations cannot auto-run.
+- Expanded bounded reads with contact lookup, template overview, and system health. Updated mail assistance, industry suggestions, settings, availability checks, models, and UI wording to use Codex models.
+
+### Verification
+- `php artisan test`: 25 passed, 172 assertions, including approval-gated contact creation and operator-mode draft creation without delivery.
+- `npx tsc --noEmit`, changed-file Pint, `git diff --check`, route listing, local migration, and the Vite production build passed.
+- No real email was sent and no production mutation was performed during local verification.

@@ -44,7 +44,7 @@ class ManagementTest extends TestCase
             'imap_host' => 'imap.hostinger.com', 'imap_port' => 993, 'imap_encryption' => 'ssl',
             'daily_allowance' => 100, 'timezone' => 'Asia/Karachi', 'signature_html' => '', 'signature_text' => '',
             'physical_address' => '1 Main Street', 'automation_paused' => false, 'track_campaign_opens' => true,
-            'track_campaign_clicks' => true, 'ai_processing_enabled' => false, 'ai_model' => 'openai/gpt-oss-120b',
+            'track_campaign_clicks' => true, 'ai_processing_enabled' => false, 'ai_model' => 'gpt-6.2-sol',
         ])->assertSessionHasNoErrors();
 
         $raw = \DB::table('mailbox_settings')->value('password');

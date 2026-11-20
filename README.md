@@ -50,15 +50,15 @@ php artisan serve
 
 Open http://127.0.0.1:8000 and sign in. Outside production the seeder also adds 12 demo contacts (`@example.com`) and a sample template. Demo contacts start with unknown campaign permission and cannot be mailed until explicitly reviewed.
 
-Open **Settings → Mailbox** and save the Hostinger email/password, SMTP, IMAP, daily allowance, physical mailing address, signatures, and privacy controls. Test SMTP and IMAP separately before use. Groq is optional and email processing is opt-in.
+Open **Settings → Mailbox** and save the Hostinger email/password, SMTP, IMAP, daily allowance, physical mailing address, signatures, and privacy controls. Test SMTP and IMAP separately before use. Codex processing is opt-in and requires an authenticated Codex CLI on the application host.
 
-Tests run against the `coldforge_test` MySQL database (root, no password, set in `phpunit.xml`). SMTP, IMAP, and Groq are faked or bypassed, so nothing leaves the machine:
+Tests run against the `coldforge_test` MySQL database (root, no password, set in `phpunit.xml`). SMTP, IMAP, and Codex are faked or bypassed, so nothing leaves the machine:
 
 ```bash
 php artisan test
 ```
 
-- `tests/Feature/ColdForgeTest.php`: unified delivery idempotency, signatures, privacy-aware tracking, sequence reply stops, and Groq schema validation
+- `tests/Feature/ColdForgeTest.php`: unified delivery idempotency, signatures, privacy-aware tracking, sequence reply stops, Codex schema validation, and Intelligence action approval
 - `tests/Feature/ManagementTest.php`: workspace rendering, encrypted mailbox credentials, explicit recipient permission, launch safeguards, and durable suppression
 
 Sample CSV for the importer: `database/samples/sample_contacts.csv`.
@@ -105,6 +105,18 @@ The launcher defaults to `gpt-6.2-sol`, the workspace-write sandbox, and on-requ
 - External sends and destructive mutations must retain ColdForge's eligibility checks, suppression checks, audit trail, and explicit confirmation.
 
 `gpt-6.2-sol` and `gpt-6.2-astra` were verified on the connected ChatGPT plan on 2026-11-20.
+
+### Intelligence permission modes
+
+The authenticated `/intelligence` workspace uses Codex as its reasoning provider and exposes ColdForge capabilities through a validated action registry:
+
+- **Read only** — inspect and summarize mail, contacts, campaigns, follow-ups, templates, pipeline work, analytics, deliverability, and system health; no database mutation.
+- **Ask approval** — create proposed actions, then wait for the administrator to confirm or reject each one.
+- **Operator** — automatically execute low-risk actions such as creating an editable draft. Medium/high-risk actions still wait for confirmation.
+
+Current actions cover contact creation/update, new/reply draft creation, and confirmation-gated delivery queueing. Every action is persisted with risk, payload, status, result, and errors; successful execution is added to Activity. External sending, permission changes, deletion, bulk mutation, campaign launch, credentials, and infrastructure must never become silent auto-actions.
+
+The Codex subprocess itself always runs ephemeral, read-only, and with shell approvals disabled. It reasons and proposes; Laravel validates and executes through ColdForge services. Never change the web bridge to `danger-full-access` or expose generic SQL/shell execution as an Intelligence tool.
 
 ---
 
@@ -174,7 +186,7 @@ FLUSH PRIVILEGES;
 ```bash
 cd /var/www/coldforge
 cp .env.example .env
-nano .env                       # DB credentials, APP_URL, Redis, optional GROQ_API_KEY, CLAMAV_BINARY
+nano .env                       # DB credentials, APP_URL, queue/cache, Codex paths, CLAMAV_BINARY
 composer install --no-dev --optimize-autoloader
 php artisan key:generate
 npm ci && npm run build         # or build locally and upload public/build

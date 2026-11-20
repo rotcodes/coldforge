@@ -42,6 +42,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/intelligence', [IntelligenceController::class, 'index']);
     Route::post('/intelligence/conversations', [IntelligenceController::class, 'create']);
     Route::post('/intelligence/conversations/{conversation}/chat', [IntelligenceController::class, 'chat'])->middleware('throttle:ai');
+    Route::patch('/intelligence/conversations/{conversation}/mode', [IntelligenceController::class, 'mode']);
+    Route::post('/intelligence/actions/{action}', [IntelligenceController::class, 'action']);
     Route::delete('/intelligence/conversations/{conversation}', [IntelligenceController::class, 'destroy']);
 
     Route::resource('contacts', ContactController::class)->only(['index', 'show', 'store', 'update', 'destroy']);

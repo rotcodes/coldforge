@@ -53,7 +53,7 @@ class MailboxSettingsController extends Controller
             'track_campaign_opens' => ['boolean'],
             'track_campaign_clicks' => ['boolean'],
             'ai_processing_enabled' => ['boolean'],
-            'ai_model' => ['required', Rule::in(['openai/gpt-oss-120b', 'openai/gpt-oss-20b'])],
+            'ai_model' => ['required', Rule::in(['gpt-6.2-sol', 'gpt-6.2-astra', 'gpt-6.1-terra'])],
         ]);
 
         if (blank($data['password'] ?? null)) {

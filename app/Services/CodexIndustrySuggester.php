@@ -3,31 +3,30 @@
 namespace App\Services;
 
 use App\Models\Contact;
-use App\Services\AI\GroqClient;
+use App\Services\AI\StructuredAiClient;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Calls Groq's free LLM API (OpenAI-compatible) to semantically cluster
+ * Uses the configured structured AI provider to semantically cluster
  * unmapped industry text into clean industry presets.
  *
  * Returns an empty array on any failure — the controller falls back to the
  * keyword-based IndustrySuggester so the feature always works even without
  * a key, offline, or when the API is down.
  */
-class GroqIndustrySuggester
+class CodexIndustrySuggester
 {
-    // Groq's current large OSS model. Smaller/faster alternative: 'openai/gpt-oss-20b'.
-    private const MODEL = 'openai/gpt-oss-120b';
+    private const MODEL = 'gpt-6.2-sol';
 
     private const MAX_TEXTS = 150;
 
     private const TIMEOUT_SECONDS = 60;
 
-    public function __construct(private readonly GroqClient $groq) {}
+    public function __construct(private readonly StructuredAiClient $ai) {}
 
     public function available(): bool
     {
-        return $this->groq->available();
+        return $this->ai->available();
     }
 
     /** @return array<int, array{slug: string, label: string, aliases: string[], contact_count: int, workflows: string, tracking: string}> */
@@ -51,7 +50,7 @@ class GroqIndustrySuggester
 
         $payload = $this->buildPayload($texts);
 
-        $content = $this->groq->complete($payload['messages'], $payload['model'], [
+        $content = $this->ai->complete($payload['messages'], $payload['model'], [
             'temperature' => $payload['temperature'],
             'max_tokens' => $payload['max_tokens'],
             'reasoning_effort' => $payload['reasoning_effort'],
@@ -86,13 +85,8 @@ class GroqIndustrySuggester
                 ['role' => 'user', 'content' => $user],
             ],
             'temperature' => 0.2,
-            // GPT-OSS 120B spends a lot on internal reasoning; 8192 tops out reliably.
             'max_tokens' => 8192,
-            // Minimise reasoning so completion fits in budget and arrives faster.
             'reasoning_effort' => 'low',
-            // Intentionally no response_format: json_object mode validates the whole
-            // completion as JSON, which fails whenever the model's reasoning or any
-            // trailing whitespace slips through. We extract JSON ourselves below.
         ];
     }
 
@@ -109,7 +103,7 @@ class GroqIndustrySuggester
         }
 
         if (! is_array($json) || ! isset($json['clusters']) || ! is_array($json['clusters'])) {
-            Log::warning('Groq suggester bad JSON', ['raw' => substr($raw, 0, 500)]);
+            Log::warning('AI industry suggester returned invalid JSON');
 
             return [];
         }

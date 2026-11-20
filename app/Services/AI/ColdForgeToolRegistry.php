@@ -4,8 +4,11 @@ namespace App\Services\AI;
 
 use App\Models\Campaign;
 use App\Models\Contact;
+use App\Models\MailboxSetting;
 use App\Models\MailMessage;
+use App\Models\MailSyncLog;
 use App\Models\SequenceEnrollment;
+use App\Models\Template;
 use App\Services\Mailbox\OutboundMailService;
 use Illuminate\Support\Arr;
 
@@ -24,6 +27,9 @@ class ColdForgeToolRegistry
             ['name' => 'pipeline_contacts', 'description' => 'Contacts in a pipeline status.', 'arguments' => ['status' => 'string', 'limit' => 'integer 1-50']],
             ['name' => 'conversation', 'description' => 'A bounded email conversation around one message.', 'arguments' => ['message_id' => 'integer']],
             ['name' => 'sequence_overview', 'description' => 'Follow-up enrollment status and upcoming steps.', 'arguments' => []],
+            ['name' => 'contact_lookup', 'description' => 'Find contacts by email, name, company, or business.', 'arguments' => ['query' => 'string', 'limit' => 'integer 1-30']],
+            ['name' => 'template_overview', 'description' => 'List reusable email templates and subjects.', 'arguments' => ['limit' => 'integer 1-30']],
+            ['name' => 'system_health', 'description' => 'Mailbox, allowance, automation, queue, failures, and latest synchronization health.', 'arguments' => []],
         ];
         if ($allowDrafts) {
             $tools[] = ['name' => 'create_reply_draft', 'description' => 'Create a local editable reply draft; never sends it.', 'arguments' => ['message_id' => 'integer', 'body' => 'string']];
@@ -43,6 +49,9 @@ class ColdForgeToolRegistry
             'pipeline_contacts' => $this->pipelineContacts($arguments),
             'conversation' => $this->conversation($arguments),
             'sequence_overview' => $this->sequenceOverview(),
+            'contact_lookup' => $this->contactLookup($arguments),
+            'template_overview' => $this->templateOverview($arguments),
+            'system_health' => $this->systemHealth(),
             'create_reply_draft' => $allowDrafts ? $this->createReplyDraft($arguments) : ['error' => 'Draft creation was not authorized by the user request.'],
             default => ['error' => 'Unknown tool.'],
         };
@@ -116,6 +125,47 @@ class ColdForgeToolRegistry
     private function sequenceOverview(): array
     {
         return SequenceEnrollment::with(['sequence:id,name', 'contact:id,email'])->whereIn('status', ['active', 'paused', 'stopped'])->orderByRaw('next_send_at IS NULL, next_send_at')->limit(50)->get(['id', 'sequence_id', 'contact_id', 'status', 'next_step_position', 'next_send_at', 'stop_reason'])->toArray();
+    }
+
+    private function contactLookup(array $args): array
+    {
+        $search = mb_substr(trim((string) ($args['query'] ?? '')), 0, 120);
+        if ($search === '') {
+            return ['error' => 'A contact query is required.'];
+        }
+
+        return Contact::where(fn ($query) => $query
+            ->where('email', 'like', "%{$search}%")
+            ->orWhere('first_name', 'like', "%{$search}%")
+            ->orWhere('last_name', 'like', "%{$search}%")
+            ->orWhere('company', 'like', "%{$search}%")
+            ->orWhere('business', 'like', "%{$search}%"))
+            ->latest('updated_at')->limit($this->limit($args, 30))
+            ->get(['id', 'email', 'first_name', 'last_name', 'company', 'business', 'pipeline_status', 'permission_status', 'tags'])->toArray();
+    }
+
+    private function templateOverview(array $args): array
+    {
+        return Template::latest('updated_at')->limit($this->limit($args, 30))
+            ->get(['id', 'name', 'subject', 'updated_at'])->toArray();
+    }
+
+    private function systemHealth(): array
+    {
+        $mailbox = MailboxSetting::current()->refreshAllowance();
+        $latestSync = MailSyncLog::latest('id')->first();
+
+        return [
+            'mailbox' => [
+                'smtp_status' => $mailbox->smtp_status, 'imap_status' => $mailbox->imap_status,
+                'last_synced_at' => $mailbox->last_synced_at, 'automation_paused' => $mailbox->automation_paused,
+                'sent_today' => $mailbox->sent_today, 'daily_allowance' => $mailbox->daily_allowance,
+            ],
+            'queue' => [
+                'pending' => \DB::table('jobs')->count(), 'failed' => \DB::table('failed_jobs')->count(),
+            ],
+            'latest_sync' => $latestSync?->only(['status', 'processed', 'created_count', 'updated_count', 'started_at', 'finished_at', 'error']),
+        ];
     }
 
     private function createReplyDraft(array $args): array

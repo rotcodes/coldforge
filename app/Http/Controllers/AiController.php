@@ -5,12 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\AiClassification;
 use App\Models\MailboxSetting;
 use App\Models\MailMessage;
-use App\Services\AI\GroqClient;
+use App\Services\AI\StructuredAiClient;
 use Illuminate\Http\Request;
 
 class AiController extends Controller
 {
-    public function assist(Request $request, MailMessage $message, GroqClient $groq)
+    public function assist(Request $request, MailMessage $message, StructuredAiClient $ai)
     {
         $data = $request->validate([
             'action' => ['required', 'in:summarize,classify,suggest_reply,action_items,next_action,shorter,professional,friendly'],
@@ -18,8 +18,8 @@ class AiController extends Controller
         ]);
         $mailbox = MailboxSetting::current();
         abort_unless($mailbox->ai_processing_enabled, 403, 'AI processing is disabled in Mailbox settings.');
-        if (! $groq->available()) {
-            return response()->json(['message' => 'Groq is not configured.'], 503);
+        if (! $ai->available()) {
+            return response()->json(['message' => 'Codex is not connected on the application host.'], 503);
         }
 
         $content = [
@@ -31,14 +31,14 @@ class AiController extends Controller
             .'Do not claim an email was sent or perform actions. Return JSON only with keys summary, intent, sentiment, urgency, confidence, reasoning, action_items, next_action, suggested_reply. '
             .'confidence must be a number from 0 to 1. action_items must be an array of short strings. Keep suggested_reply editable and clearly a human-review draft. '
             .'For shorter, professional, or friendly, rewrite only the supplied draft in that style without adding facts.';
-        $result = $groq->json([
+        $result = $ai->json([
             ['role' => 'system', 'content' => $system],
             ['role' => 'user', 'content' => json_encode(['requested_action' => $data['action'], 'email' => $content, 'draft_to_rewrite' => $data['draft'] ?? null], JSON_UNESCAPED_SLASHES)],
         ], $mailbox->ai_model, ['summary', 'intent', 'sentiment', 'urgency', 'confidence', 'reasoning', 'action_items', 'next_action', 'suggested_reply'], [
             'task' => 'mail_'.$data['action'], 'prompt_version' => 'mail-assist-v2', 'max_tokens' => 1800,
         ]);
         if (! $result) {
-            return response()->json(['message' => 'Groq could not produce a valid response.'], 502);
+            return response()->json(['message' => 'Codex could not produce a valid response.'], 502);
         }
 
         AiClassification::updateOrCreate(['mail_message_id' => $message->id], [
