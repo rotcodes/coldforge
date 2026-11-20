@@ -532,3 +532,8 @@ Total                 48 tests · 320 assertions · 8.6s
 ### What
 - Replaced the legacy indigo/violet favicon with an adaptive neutral ColdForge tile and bolt that follows the browser's light/dark color scheme.
 - Changed Inertia's top navigation-progress indicator from violet to neutral zinc and added matching light/dark browser theme colors.
+
+## [2026-11-20 15:05] Polish — Dark Intelligence user messages
+
+### What
+- Replaced the primary-token user message bubble, which becomes near-white in dark mode, with a low-contrast neutral elevated surface and subtle border. User messages remain distinct without producing a bright, eye-straining card.
