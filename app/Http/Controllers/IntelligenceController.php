@@ -16,7 +16,7 @@ class IntelligenceController extends Controller
 {
     public function index(Request $request, StructuredAiClient $ai)
     {
-        $conversations = AiConversation::where('user_id', $request->user()->id)->latest('updated_at')->limit(30)->get(['id', 'title', 'mode', 'updated_at']);
+        $conversations = AiConversation::where('user_id', $request->user()->id)->latest('updated_at')->limit(30)->get(['id', 'title', 'mode', 'model', 'reasoning_effort', 'updated_at']);
         $conversation = $request->integer('conversation')
             ? AiConversation::where('user_id', $request->user()->id)->findOrFail($request->integer('conversation'))
             : $conversations->first();

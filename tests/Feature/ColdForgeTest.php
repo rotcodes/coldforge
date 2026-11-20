@@ -195,6 +195,11 @@ class ColdForgeTest extends TestCase
         $this->assertSame('approval', $conversation->mode);
         $this->assertSame('gpt-6.2-astra', $conversation->model);
         $this->assertSame('high', $conversation->reasoning_effort);
+
+        $this->get('/intelligence')
+            ->assertOk()
+            ->assertSee('gpt-6.2-astra')
+            ->assertSee('high');
     }
 
     public function test_hard_bounce_suppresses_contact_and_stops_follow_ups(): void
