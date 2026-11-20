@@ -151,7 +151,7 @@ export default function IntelligenceIndex({ conversations, conversation, availab
                                 {messages.map((message) => (
                                     <div key={message.id} className={cn('flex gap-3', message.role === 'user' && 'justify-end')}>
                                         {message.role === 'assistant' && <div className="grid size-8 shrink-0 place-items-center rounded-full border bg-muted"><Bot className="size-4" /></div>}
-                                        <div className={cn('max-w-3xl whitespace-pre-wrap rounded-lg px-4 py-3 text-sm leading-6', message.role === 'user' ? 'bg-primary text-primary-foreground' : 'border bg-background/50')}>
+                                        <div className={cn('max-w-3xl whitespace-pre-wrap rounded-lg border px-4 py-3 text-sm leading-6', message.role === 'user' ? 'border-foreground/10 bg-foreground/[0.08] text-foreground' : 'bg-background/50')}>
                                             {message.content}
                                             {message.role === 'assistant' && message.tool_calls && message.tool_calls.length > 0 && <div className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground">Used {message.tool_calls.length} bounded workspace tool{message.tool_calls.length === 1 ? '' : 's'}</div>}
                                         </div>
