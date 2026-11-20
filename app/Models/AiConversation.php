@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class AiConversation extends Model
 {
-    protected $fillable = ['user_id', 'title', 'mode'];
+    protected $fillable = ['user_id', 'title', 'mode', 'model', 'reasoning_effort'];
 
     public function messages(): HasMany
     {

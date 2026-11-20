@@ -114,6 +114,8 @@ The authenticated `/intelligence` workspace uses Codex as its reasoning provider
 - **Ask approval** — create proposed actions, then wait for the administrator to confirm or reject each one.
 - **Operator** — automatically execute low-risk actions such as creating an editable draft. Medium/high-risk actions still wait for confirmation.
 
+Each conversation stores its own permission mode, Codex model (`GPT-6.2 Sol`, `GPT-6.2 Astra`, or `GPT-6.1 Terra`), and reasoning effort. These controls live directly in the message composer so the operator can change them before sending the next prompt.
+
 Current actions cover contact creation/update, new/reply draft creation, and confirmation-gated delivery queueing. Every action is persisted with risk, payload, status, result, and errors; successful execution is added to Activity. External sending, permission changes, deletion, bulk mutation, campaign launch, credentials, and infrastructure must never become silent auto-actions.
 
 The Codex subprocess itself always runs ephemeral, read-only, and with shell approvals disabled. It reasons and proposes; Laravel validates and executes through ColdForge services. Never change the web bridge to `danger-full-access` or expose generic SQL/shell execution as an Intelligence tool.
