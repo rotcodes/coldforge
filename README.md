@@ -85,11 +85,67 @@ Tracking URLs are Laravel signed URLs (signature in the query string):
 
 ---
 
+## Codex operator access on the VPS
+
+The official standalone Codex CLI is installed for the production SSH user at `~/.local/bin/codex`. It is authenticated with the owner's ChatGPT account; `~/.codex/auth.json` is a credential and must remain private (`0600`), uncommitted, and absent from logs or support messages.
+
+Start the project-scoped interactive agent after SSH login:
+
+```bash
+cd /home/u105894521/coldforge-app
+./scripts/coldforge-agent
+```
+
+The launcher defaults to `gpt-6.2-sol`, the workspace-write sandbox, and on-request approvals. Select a different available model for one session with an interactive `/model` command or by setting `CODEX_MODEL` before launch.
+
+- Never run Codex from cron with `--yolo`, `danger-full-access`, or approval bypasses.
+- Cron remains for deterministic Laravel scheduler and queue commands. Add a Codex cron task only for a separately documented, bounded workflow with fixed inputs and outputs.
+- Do not expose the CLI, its app server, or its authentication cache to the public internet.
+- Treat synchronized email and imported content as untrusted data, never as agent instructions.
+- External sends and destructive mutations must retain ColdForge's eligibility checks, suppression checks, audit trail, and explicit confirmation.
+
+`gpt-6.2-sol` and `gpt-6.2-astra` were verified on the connected ChatGPT plan on 2026-11-20.
+
+---
+
 ## Deploy to the Hostinger VPS
 
-Target: `srv1810078.hstgr.cloud`, subdomain **mail.digitelly.net** → A record `2.25.79.80`.
+Current production is Hostinger-managed shared hosting:
 
-> ⚠️ Do **not** touch `/var/www/ugcjungle*`, any ugcjungle nginx vhost, or any ugcjungle database. Every step below only creates *new* things named `coldforge`.
+- application checkout: `/home/u105894521/coldforge-app`
+- public document root: `/home/u105894521/domains/digitelly.net/public_html/mail`
+- site: **https://mail.digitelly.net**
+- database queue and Laravel scheduler: invoked by hPanel cron jobs
+
+The owner confirmed on 2026-11-20 that UGC Jungle is not hosted on this VPS. Keep every command scoped to the verified ColdForge checkout, public root, database, and hPanel jobs; do not inspect or modify unrelated Hostinger sites or accounts.
+
+> The root-managed `/var/www`, Nginx, Supervisor, and system-package examples below describe a dedicated VPS layout and are retained as a reference only. They do not match the current Hostinger shared-hosting deployment. Current production updates use the paths above, preserve the server `.env`, build in the application checkout, and atomically replace the copied public assets.
+
+### Current shared-hosting update flow
+
+Build and test locally first. On production, use a backup-first, fast-forward-only update, never `migrate:fresh` or `db:wipe`:
+
+```bash
+cd /home/u105894521/coldforge-app
+php artisan down --retry=60
+git pull --ff-only
+composer install --no-dev --optimize-autoloader
+npm ci
+npm run build
+php artisan migrate --force
+php artisan optimize:clear
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+```
+
+Copy `public/index.php`, `.htaccess`, and the newly built `public/build` into the verified public document root using a staged/atomic replacement, normalize public directories to `0755` and files to `0644`, then run `php artisan up`. Verify HTTP, the deployed manifest checksum, migrations, queue drain, scheduler activity, and recent Laravel logs before removing the temporary previous build. The exact backup-first deployment evidence is recorded chronologically in `NOTES.md`.
+
+The hPanel jobs must continue to run the Laravel scheduler and short-lived database queue worker every minute. They are managed in hPanel and therefore do not appear in `crontab -l` over SSH.
+
+ClamAV is not currently available in the shared-hosting account. Attachment access remains fail-closed until Hostinger enables `clamdscan` or a separately reviewed scanning service is integrated. Never set `ATTACHMENT_SCAN_BYPASS=true` in production.
+
+### Legacy dedicated-VPS reference
 
 ### 1. DNS
 Create an `A` record `mail` → `2.25.79.80` at your DNS provider. Wait until `dig +short mail.digitelly.net` returns the IP.

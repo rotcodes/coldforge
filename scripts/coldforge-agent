@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+APP_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+MODEL="${CODEX_MODEL:-gpt-6.2-sol}"
+
+if ! command -v codex >/dev/null 2>&1; then
+    echo "Codex CLI is not available on PATH." >&2
+    exit 127
+fi
+
+exec codex \
+    --cd "$APP_ROOT" \
+    --model "$MODEL" \
+    --sandbox workspace-write \
+    --ask-for-approval on-request \
+    "$@"
