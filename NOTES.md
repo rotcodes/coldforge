@@ -526,3 +526,9 @@ Total                 48 tests · 320 assertions · 8.6s
 
 ### Live follow-up
 - Added `model` and `reasoning_effort` to the lightweight conversation-list selection. Without them, opening the newest conversation at `/intelligence` supplied null preferences to the composer even though the database values were present.
+
+## [2026-11-20 14:55] Polish — Neutral browser branding
+
+### What
+- Replaced the legacy indigo/violet favicon with an adaptive neutral ColdForge tile and bolt that follows the browser's light/dark color scheme.
+- Changed Inertia's top navigation-progress indicator from violet to neutral zinc and added matching light/dark browser theme colors.
