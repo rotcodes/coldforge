@@ -21,6 +21,9 @@ class CodexClient implements StructuredAiClient
     public function complete(array $messages, ?string $model = null, array $options = []): ?string
     {
         $model = $this->model($model);
+        $reasoning = in_array($options['reasoning_effort'] ?? 'low', ['low', 'medium', 'high', 'xhigh'], true)
+            ? $options['reasoning_effort'] ?? 'low'
+            : 'low';
         $started = microtime(true);
         $request = AiRequest::create([
             'user_id' => auth()->id(),
@@ -28,7 +31,7 @@ class CodexClient implements StructuredAiClient
             'model' => $model,
             'prompt_version' => $options['prompt_version'] ?? 'v1',
             'status' => 'started',
-            'metadata' => ['message_count' => count($messages), 'provider' => 'codex_cli'],
+            'metadata' => ['message_count' => count($messages), 'provider' => 'codex_cli', 'reasoning_effort' => $reasoning],
         ]);
         if (! $this->available()) {
             $request->update(['status' => 'unavailable', 'error' => 'Codex CLI or ChatGPT authentication is unavailable.']);
@@ -36,9 +39,6 @@ class CodexClient implements StructuredAiClient
             return null;
         }
 
-        $reasoning = in_array($options['reasoning_effort'] ?? 'low', ['low', 'medium', 'high', 'xhigh'], true)
-            ? $options['reasoning_effort'] ?? 'low'
-            : 'low';
         $process = new Process([
             (string) config('services.codex.binary'),
             '--sandbox', 'read-only',
