@@ -542,3 +542,15 @@ Total                 48 tests · 320 assertions · 8.6s
 
 ### What
 - Added the conversation-selected reasoning effort to every Codex `ai_requests.metadata` record so live operations can prove the composer model/effort controls reached the actual subprocess invocation.
+
+## [2026-11-24 19:15] Step 7 — Wholesale-only gradual outreach ramp
+
+### What
+- Added an explicit wholesale/distributor CSV importer that rejects mixed Amazon-seller rows, retains source assignment/status metadata, and makes only `new`, unsuppressed, never-contacted records eligible under the owner-approved B2B review.
+- Added an idempotent ramp planner that creates GUI-visible daily campaigns of 40, 50, then at most 60 recipients. It skips weekends and operator-supplied holiday dates and refuses a duplicate active ramp.
+- Added campaign-level `send_interval_seconds`; the normal campaign queue now delays every recipient after the first, preserving the shared SMTP engine, allowance, idempotency, pause/cancel, tracking, unsubscribe, and history.
+- Displayed configured send spacing on campaign detail and documented dry-run-first production commands.
+
+### Safety and verification
+- The importer never makes non-new, suppressed, bounced, replied, previously contacted, or already-mailed contacts ramp-eligible. Source rows that do not explicitly identify wholesale/distribution are not imported.
+- Added focused tests for mixed-row rejection, non-new exclusion, 40/50/60 planning with skipped dates, and two-minute queue delays. Run the full test/type/build suite and production dry runs before activating any campaigns.

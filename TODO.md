@@ -22,6 +22,7 @@
 - [x] Feature tests with all external delivery/AI calls faked
 - [x] Agentic ColdForge Intelligence with bounded read tools, request history, prompt-injection resistance, and explicit editable draft creation
 - [x] Smart mail actions for summaries, classification confidence/reasoning, action items, next actions, and tone/length rewrites
+- [x] Wholesale-only CSV import and business-day 40/50/60 campaign ramp with per-recipient spacing
 
 ## Remaining refinements
 

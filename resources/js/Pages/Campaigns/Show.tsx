@@ -122,6 +122,7 @@ export default function CampaignShow({ campaign, breakdown, events, recipients }
                             <span className="font-mono text-foreground">{fmt(campaign.daily_cap)}/day</span>
                         </div>
                         <div className="flex justify-between"><span>Mailbox</span><span className="text-foreground">Hostinger</span></div>
+                        {campaign.send_interval_seconds > 0 && <div className="flex justify-between"><span>Send spacing</span><span className="font-mono text-foreground">{campaign.send_interval_seconds / 60} min</span></div>}
                         {campaign.schedule_at && (
                             <div className="flex justify-between">
                                 <span className="flex items-center gap-1">

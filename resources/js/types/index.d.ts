@@ -108,6 +108,7 @@ export interface Campaign {
     schedule_at: string | null;
     status: CampaignStatus;
     daily_cap: number;
+    send_interval_seconds: number;
     total_recipients: number;
     sent_count: number;
     opened_count: number;
