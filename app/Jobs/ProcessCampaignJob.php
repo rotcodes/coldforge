@@ -44,13 +44,17 @@ class ProcessCampaignJob implements ShouldBeUnique, ShouldQueue
             return;
         }
 
-        foreach ($queued->orderBy('id')->limit($remaining)->get() as $send) {
+        $interval = max(0, (int) $campaign->send_interval_seconds);
+        foreach ($queued->orderBy('id')->limit($remaining)->get()->values() as $position => $send) {
             $mailbox = MailboxSetting::current()->refreshAllowance();
             if (! $mailbox->configured() || $mailbox->automation_paused || $mailbox->sent_today >= $mailbox->daily_allowance) {
                 return;
             }
             $send->update(['status' => 'sending']);
-            SendEmailJob::dispatch($send);
+            $pending = SendEmailJob::dispatch($send);
+            if ($interval > 0 && $position > 0) {
+                $pending->delay(now()->addSeconds($position * $interval));
+            }
         }
     }
 }

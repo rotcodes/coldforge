@@ -73,6 +73,24 @@ Sample CSV for the importer: `database/samples/sample_contacts.csv`.
 4. `SendEmailJob` renders and hands the durable message to `SendMailMessageJob`, the shared Hostinger SMTP engine used by personal, scheduled, test, campaign, and sequence email. It has idempotency, central allowance checks, rate limiting, retry/backoff, uncertainty handling, and Sent-folder reconciliation.
 5. The scheduler starts due campaigns/messages, dispatches eligible sequence steps, and synchronizes IMAP every minute. Follow-ups re-check reply, suppression, campaign, and permission state immediately before delivery.
 
+### Wholesale-only ramp command
+
+The deterministic wholesale importer accepts only source rows whose company or website explicitly says wholesale, wholesaler, distributor, distribution, or distributing. It imports non-new matches for history but only marks `new`, unsuppressed, never-contacted records as campaign-eligible.
+
+```bash
+php artisan outreach:import-wholesale storage/app/private/imports/leads.csv --dry-run
+php artisan outreach:import-wholesale storage/app/private/imports/leads.csv
+```
+
+Plan the approved business-day ramp before creating it. The example starts at 11:00 AM Central, spaces recipients by two minutes, caps every day at 60, skips weekends automatically, and explicitly skips the supplied U.S. holiday:
+
+```bash
+php artisan outreach:schedule-wholesale-ramp --start-date=2026-11-24 --start-time=11:00 --timezone=America/Chicago --interval=120 --max=60 --skip-date=2026-11-26 --dry-run
+php artisan outreach:schedule-wholesale-ramp --start-date=2026-11-24 --start-time=11:00 --timezone=America/Chicago --interval=120 --max=60 --skip-date=2026-11-26
+```
+
+The planner creates visible campaigns in batches of 40, 50, then at most 60 per business day. It refuses duplicate ramps and excludes suppressed, replied, previously contacted, or already queued/sent contacts. `send_interval_seconds` is enforced by the ordinary campaign queue, so pause/cancel, tracking, unsubscribe, idempotency, allowance, and delivery history remain active.
+
 Tracking URLs are Laravel signed URLs (signature in the query string):
 
 | What | Route |
