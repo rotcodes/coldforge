@@ -554,3 +554,19 @@ Total                 48 tests · 320 assertions · 8.6s
 ### Safety and verification
 - The importer never makes non-new, suppressed, bounced, replied, previously contacted, or already-mailed contacts ramp-eligible. Source rows that do not explicitly identify wholesale/distribution are not imported.
 - Added focused tests for mixed-row rejection, non-new exclusion, 40/50/60 planning with skipped dates, and two-minute queue delays. Run the full test/type/build suite and production dry runs before activating any campaigns.
+
+## [2026-11-24 19:49] Production deployment — Wholesale ramp activated
+
+### Deployment
+- Merged PR #10 and deployed `eada9d5` to `/home/u105894521/coldforge-app`; the production migration added `campaigns.send_interval_seconds` and the copied public build manifest matched the application build SHA-256.
+- Preserved `.env`, customized public `index.php`/`.htaccess`, database, scheduler, and queue configuration. The scoped recovery set at `/home/u105894521/backups/coldforge-wholesale-ramp-20261124T143413Z` contains a Git bundle, protected production environment, public-build archive, database dump, and verified checksum manifest.
+- Uploaded the untracked source CSV to private application storage with SHA-256 `c3da9788cc51bbd44b19a244940ea55c5dabfb1831aa10c124ccc16d75fda756`; it was never committed or copied into the public document root.
+
+### Import and schedule
+- Scanned 8,980 source rows, rejected 8,785 mixed Amazon-seller rows, imported 195 explicit wholesale/distributor matches, and made only the 192 `new`, unsuppressed, never-contacted records eligible. Three `interested` records remain permission-unknown and outside the ramp.
+- Set the mailbox daily allowance to 60 and created four scheduled campaigns: 40 on Nov 24, 50 on Nov 25, 60 on Nov 27, and 42 on Nov 30. Each starts at 11:00 AM America/Chicago and spaces recipients by 120 seconds; Nov 26 and weekends are skipped.
+- Verified 192 unique queued recipients, zero early-created campaign messages, zero suppressed ramp recipients, zero failed jobs, and valid signed open/click/unsubscribe URLs with no unresolved template variables across all 192 renders.
+
+### Live checks
+- Production `/up` and `/login` returned HTTP 200; `/` correctly returned HTTP 302. Git is clean on `main`, hPanel scheduler and queue logs show successful current runs, and application/public manifest hashes matched.
+- Removed only the temporary pre-swap public build after verification. The checksum-verified public-build archive in the recovery set remains available for rollback.
